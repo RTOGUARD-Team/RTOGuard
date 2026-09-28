@@ -12,7 +12,7 @@ class OrderRequest(BaseModel):
     payment_mode: str
     pincode: str
     category: str
-    is_festive_window: boolc
+    is_festive_window: bool
 
 
 class ScoreResponse(BaseModel):
