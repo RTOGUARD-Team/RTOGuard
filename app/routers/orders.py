@@ -1,0 +1,38 @@
+from typing import List
+
+from fastapi import APIRouter, Query
+
+from app.schemas import OrderRequest, ScoreResponse, HighRiskOrder
+from app.core.scoring import score_order          # ASSUMED: score_order(order: OrderRequest) -> float
+from app.core.actions import recommend_action     # ASSUMED: recommend_action(score: float) -> (action, reason)
+
+router = APIRouter(prefix="/api")
+
+# Demo data until orders come from db.py
+MOCK_ORDERS = [
+    {"order_id": 101, "customer_id": 2, "order_value": 5000, "payment_mode": "cod",
+     "pincode": "800001", "category": "electronics", "is_festive_window": True},
+    {"order_id": 102, "customer_id": 1, "order_value": 1200, "payment_mode": "cod",
+     "pincode": "110001", "category": "apparel", "is_festive_window": False},
+]
+
+
+@router.post("/score-order", response_model=ScoreResponse)
+def score(req: OrderRequest):
+    risk = score_order(req)
+    action, reason = recommend_action(risk)
+    return ScoreResponse(risk_score=risk, action=action, reason=reason)
+
+
+@router.get("/orders/high-risk", response_model=List[HighRiskOrder])
+def high_risk(threshold: float = Query(0.6, ge=0.0, le=1.0)):
+    results = []
+    for o in MOCK_ORDERS:
+        req = OrderRequest(**{k: v for k, v in o.items() if k != "order_id"})
+        risk = score_order(req)
+        if risk >= threshold:
+            action, reason = recommend_action(risk)
+            results.append(HighRiskOrder(
+                order_id=o["order_id"], risk_score=risk, action=action, reason=reason
+            ))
+    return results
