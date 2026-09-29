@@ -8,6 +8,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from "recharts";
 
@@ -73,7 +74,7 @@ function Analytics({ orders }) {
                   cx="50%"
                   cy="50%"
                   outerRadius={90}
-                  label
+                  label={({ name, value }) => `${name}: ${value}`}
                 >
                   {riskData.map((entry, index) => (
                     <Cell
@@ -84,6 +85,7 @@ function Analytics({ orders }) {
                 </Pie>
 
                 <Tooltip />
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </div>
