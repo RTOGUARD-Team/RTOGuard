@@ -5,7 +5,7 @@ from typing import Literal
 from fastapi import APIRouter, Query
 
 from app.schemas import SimulationResponse
-from app.core.simulate import run_simulation
+from app.services.simulation_engine import SimulationEngine
 
 router = APIRouter(prefix="/api")
 
@@ -17,11 +17,14 @@ def simulate(
         description="Simulation period"
     )
 ):
-    result = run_simulation(window)
+    result = SimulationEngine(window)
     return SimulationResponse(**result)
 
 
-
+@router.get("/simulate",response_model=SimulationResponse)
+def simulate():
+    result= SimulationEngine()
+    return SimulationResponse(**result)
 
 
 '''
