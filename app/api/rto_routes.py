@@ -4,7 +4,8 @@ from app.rto_schemas import (
     RecommendationRequest,
     CostRequest,
     SimulationRequest,
-    RawSimulationRequest
+    RawSimulationRequest,
+    RawOrder
 )
 
 from app.core.scoring import score_order as ml_score_order
@@ -165,75 +166,60 @@ def calculate_cost(
 
 @router.post("/score-order")
 def score_order(
-    request: RecommendationRequest
+    request: RawOrder
 ):
-
+    """
+    Evaluates an incoming customer order:
+    1. Runs Riya's ML Risk Scoring Engine -> generates risk_score & top_factors
+    2. Feeds into Shubham's Action Recommendation Engine -> decides LOW/MEDIUM/HIGH & action
+    3. Feeds into Shubham's Cost Calculator -> computes financial loss avoided & net impact
+    """
     try:
+        order_dict = request.model_dump()
 
         # ---------------------------------------------
-        # STEP 1
-        # Recommendation
+        # STEP 1: ML Risk Scoring Engine (Riya)
         # ---------------------------------------------
+        ml_result = ml_score_order(order_dict)
+        risk_score = ml_result["risk_score"]
+        top_factors = ml_result.get("top_factors", [])
 
+        # ---------------------------------------------
+        # STEP 2: Action Recommendation Engine (Shubham)
+        # ---------------------------------------------
         recommendation = (
             recommendation_engine
             .recommend(
-
-                risk_score=
-                    request.risk_score,
-
-                order_value=
-                    request.order_value,
-
-                payment_mode=
-                    request.payment_mode,
-
-                top_factors=
-                    request.top_factors
+                risk_score=risk_score,
+                order_value=request.order_value,
+                payment_mode=request.payment_mode,
+                top_factors=top_factors
             )
         )
 
         # ---------------------------------------------
-        # STEP 2
-        # Economics
+        # STEP 3: Economics & Cost Calculator (Shubham)
         # ---------------------------------------------
-
         economics = (
             cost_calculator
             .calculate(
-
-                order_value=
-                    request.order_value,
-
-                risk_score=
-                    request.risk_score,
-
-                action=
-                    recommendation[
-                        "recommended_action"
-                    ],
-
-                suggested_deposit=
-                    recommendation[
-                        "suggested_deposit"
-                    ]
+                order_value=request.order_value,
+                risk_score=risk_score,
+                action=recommendation["recommended_action"],
+                suggested_deposit=recommendation["suggested_deposit"]
             )
         )
 
         # ---------------------------------------------
-        # STEP 3
-        # COMBINE
+        # STEP 4: Combined Decision
         # ---------------------------------------------
-
         return {
-
+            "order_id": request.order_id,
             **recommendation,
-
             **economics
         }
 
     except ValueError as error:
-
         raise HTTPException(
             status_code=400,
             detail=str(error)
