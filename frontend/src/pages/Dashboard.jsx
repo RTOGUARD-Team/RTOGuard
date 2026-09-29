@@ -1,9 +1,26 @@
+import { useMemo, useState } from "react";
+
+import Header from "../components/Header";
+import Sidebar from "../components/Sidebar";
+import KpiCard from "../components/KpiCard";
+import OrderFeed from "../components/OrderFeed";
+import OrderDrawer from "../components/OrderDrawer";
+import Filters from "../components/Filters";
+import Analytics from "../components/Analytics";
+import SimulationCard from "../components/SimulationCard";
+
+import mockOrders from "../data/mockOrders";
+
 function Dashboard() {
   const [selectedOrder, setSelectedOrder] = useState(null);
 
   const [riskFilter, setRiskFilter] = useState("All");
   const [paymentFilter, setPaymentFilter] = useState("All");
   const [sortBy, setSortBy] = useState("risk-desc");
+
+  // ========================================
+  // FILTERING AND SORTING
+  // ========================================
 
   const filteredOrders = useMemo(() => {
     let result = [...mockOrders];
@@ -45,10 +62,9 @@ function Dashboard() {
     return result;
   }, [riskFilter, paymentFilter, sortBy]);
 
-
-  // ================================
+  // ========================================
   // DASHBOARD CALCULATIONS
-  // ================================
+  // ========================================
 
   const totalOrders = mockOrders.length;
 
@@ -73,6 +89,9 @@ function Dashboard() {
     0
   );
 
+  // ========================================
+  // DASHBOARD UI
+  // ========================================
 
   return (
     <div className="app">
@@ -82,11 +101,19 @@ function Dashboard() {
         <Header />
 
         <main className="dashboard">
+
+          {/* Dashboard Heading */}
+
           <h1>RTOGuard Dashboard</h1>
 
           <p className="subtitle">
             Monitor COD orders, RTO risk and prevention actions.
           </p>
+
+
+          {/* ==================================
+              KPI CARDS
+          ================================== */}
 
           <section className="kpi-grid">
 
@@ -116,10 +143,29 @@ function Dashboard() {
 
           </section>
 
+
+          {/* ==================================
+              RISK ANALYTICS
+          ================================== */}
+
           <Analytics orders={mockOrders} />
 
+
+          {/* ==================================
+              RISK SIMULATION
+          ================================== */}
+
+          <SimulationCard />
+
+
+          {/* ==================================
+              RECENT ORDERS
+          ================================== */}
+
           <section className="order-section">
+
             <div className="section-header order-header">
+
               <div>
                 <h2>Recent Orders</h2>
 
@@ -129,6 +175,7 @@ function Dashboard() {
                 </p>
               </div>
 
+
               <Filters
                 riskFilter={riskFilter}
                 setRiskFilter={setRiskFilter}
@@ -137,20 +184,31 @@ function Dashboard() {
                 sortBy={sortBy}
                 setSortBy={setSortBy}
               />
+
             </div>
+
 
             <OrderFeed
               orders={filteredOrders}
               onSelect={setSelectedOrder}
             />
+
           </section>
+
         </main>
+
       </div>
+
+
+      {/* ==================================
+          ORDER DETAILS DRAWER
+      ================================== */}
 
       <OrderDrawer
         order={selectedOrder}
         onClose={() => setSelectedOrder(null)}
       />
+
     </div>
   );
 }
