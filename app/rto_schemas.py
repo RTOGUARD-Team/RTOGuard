@@ -90,3 +90,36 @@ class SimulationRequest(BaseModel):
     )
 
     seed: int = 42
+
+
+# =====================================================
+# RAW ORDER (no risk_score — ML will generate it)
+# =====================================================
+
+class RawOrder(BaseModel):
+
+    order_id: str = ""
+
+    customer_id: int = 0
+
+    order_value: float = Field(
+        ...,
+        gt=0
+    )
+
+    payment_mode: str = "COD"
+
+    pincode: str = "110001"
+
+    category: str = "general"
+
+    is_festive_window: bool = False
+
+
+# =====================================================
+# RAW SIMULATION REQUEST
+# =====================================================
+
+class RawSimulationRequest(BaseModel):
+
+    orders: list[RawOrder]

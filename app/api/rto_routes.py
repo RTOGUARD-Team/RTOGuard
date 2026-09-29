@@ -3,8 +3,11 @@ from fastapi import APIRouter, HTTPException
 from app.rto_schemas import (
     RecommendationRequest,
     CostRequest,
-    SimulationRequest
+    SimulationRequest,
+    RawSimulationRequest
 )
+
+from app.core.scoring import score_order as ml_score_order
 
 from app.services.action_recommendation import (
     ActionRecommendationEngine
@@ -322,3 +325,77 @@ def simulation_demo():
             orders
         )
     )
+
+
+# =====================================================
+# 6. SCORE + SIMULATE (combined)
+# =====================================================
+
+@router.post("/simulate-orders")
+def simulate_with_scoring(
+    request: RawSimulationRequest
+):
+    """
+    Takes raw orders (no risk_score needed).
+    Step 1: Runs ML scoring on each order.
+    Step 2: Feeds scored orders into simulation engine.
+    Returns full simulation results.
+    """
+
+    try:
+
+        scored_orders = []
+
+        for i, raw_order in enumerate(
+            request.orders
+        ):
+
+            # -----------------------------------------
+            # ML SCORING
+            # -----------------------------------------
+
+            order_dict = raw_order.model_dump()
+
+            ml_result = ml_score_order(order_dict)
+
+            # -----------------------------------------
+            # BUILD SCORED ORDER
+            # -----------------------------------------
+
+            scored_orders.append({
+                "order_id":
+                    order_dict.get("order_id")
+                    or f"ORD{i+1:04d}",
+
+                "order_value":
+                    order_dict["order_value"],
+
+                "payment_mode":
+                    order_dict["payment_mode"],
+
+                "risk_score":
+                    ml_result["risk_score"],
+
+                "top_factors":
+                    ml_result.get(
+                        "top_factors", []
+                    )
+            })
+
+        # ---------------------------------------------
+        # RUN SIMULATION
+        # ---------------------------------------------
+
+        result = (
+            simulation_engine
+            .simulate(scored_orders)
+        )
+
+        return result
+
+    except ValueError as error:
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(error)
+        )

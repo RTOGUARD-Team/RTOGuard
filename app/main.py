@@ -19,7 +19,7 @@ app.include_router(rto_router)
 
 
 @app.get("/")
-def health():
+def root():
     return {
         "status": "ok",
         "service": "RTOGuard AI",
@@ -27,7 +27,7 @@ def health():
     }
 
 @app.get("/health")
-def health():
+def health_check():
     return {
         "api": "ok",
         "mongodb": "connected" if ping_db() else "disconnected"
