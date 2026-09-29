@@ -2,7 +2,7 @@ from pydantic import BaseModel
 
 
 class OrderRequest(BaseModel):
-    customer_id: int
+    customer_id: str      # ← SHA-256 hash, 64 hex characters
     order_value: float
     payment_mode: str
     pincode: str
