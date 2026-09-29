@@ -39,8 +39,3 @@ class DashboardSummary(BaseModel):
     overall_rto_rate: float
     total_at_risk_value: float
     festive_breakdown: FestiveBreakdown
-    
-    
-class simulation(BaseModel):
-    riskscore: float
-    reason:str

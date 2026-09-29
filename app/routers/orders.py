@@ -1,12 +1,11 @@
-from typing import List
 from fastapi import APIRouter, Query
-from app.schemas import OrderRequest, ScoreResponse, HighRiskOrder
-from app.core.scoring import score_order          # ASSUMED: score_order(order: OrderRequest) -> float
-from app.core.actions import recommend_action     # ASSUMED: recommend_action(score: float) -> (action, reason)
+from app.schemas import OrderRequest, HighRiskOrder
+from app.core.scoring import score_order
+from app.core.actions import recommend_action
 
 router = APIRouter(prefix="/api")
 
-# Demo data until orders come from db.py
+# Demo data until orders come from db
 MOCK_ORDERS = [
     {"order_id": 101, "customer_id": 2, "order_value": 5000, "payment_mode": "cod",
      "pincode": "800001", "category": "electronics", "is_festive_window": True},
@@ -15,9 +14,7 @@ MOCK_ORDERS = [
 ]
 
 
-  
-
-@router.get("/orders/high-risk", response_model=List[HighRiskOrder])
+@router.get("/orders/high-risk", response_model=list[HighRiskOrder])
 def high_risk(threshold: float = Query(0.6, ge=0.0, le=1.0)):
     results = []
     for o in MOCK_ORDERS:
