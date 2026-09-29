@@ -1,25 +1,24 @@
-from pydantic import BaseModel, Field
-from typing import Literal
+from pydantic import BaseModel
 
 
 class OrderRequest(BaseModel):
     customer_id: int
-    order_value: float = Field(..., ge=0)
-    payment_mode: Literal["cod", "prepaid"]
+    order_value: float
+    payment_mode: str
     pincode: str
     category: str
     is_festive_window: bool
 
 
 class ScoreResponse(BaseModel):
-    risk_score: float = Field(..., ge=0, le=1)
+    risk_score: float
     action: str
     reason: str
 
 
 class HighRiskOrder(BaseModel):
     order_id: int
-    risk_score: float = Field(..., ge=0, le=1)
+    risk_score: float
     action: str
     reason: str
 
