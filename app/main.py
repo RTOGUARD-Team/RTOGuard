@@ -25,3 +25,10 @@ def health():
         "service": "RTOGuard AI",
         "db_connected": ping_db(),
     }
+
+@app.get("/health")
+def health():
+    return {
+        "api": "ok",
+        "mongodb": "connected" if ping_db() else "disconnected"
+    }
