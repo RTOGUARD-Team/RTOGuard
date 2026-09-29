@@ -1,3 +1,4 @@
+
 from pymongo import MongoClient
 
 from app.config import settings
@@ -18,3 +19,4 @@ def ping_db() -> bool:
         return True
     except Exception:
         return False
+
