@@ -15,12 +15,7 @@ MOCK_ORDERS = [
 ]
 
 
-@router.post("/score-order", response_model=ScoreResponse)
-def score(req: OrderRequest):
-    risk = score_order(req)
-    action, reason = recommend_action(risk)
-    return ScoreResponse(risk_score=risk, action=action, reason=reason)
-
+  
 
 @router.get("/orders/high-risk", response_model=List[HighRiskOrder])
 def high_risk(threshold: float = Query(0.6, ge=0.0, le=1.0)):
