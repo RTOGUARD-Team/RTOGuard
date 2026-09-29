@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+import re
+from pydantic import BaseModel, Field, field_validator
 
 
 # =====================================================
@@ -100,7 +101,10 @@ class RawOrder(BaseModel):
 
     order_id: str = ""
 
-    customer_id: int = 0
+    customer_id: str = Field(
+        ...,
+        description="SHA-256 hashed customer identifier (64 hex characters)."
+    )
 
     order_value: float = Field(
         ...,
@@ -114,6 +118,14 @@ class RawOrder(BaseModel):
     category: str = "general"
 
     is_festive_window: bool = False
+
+    @field_validator("customer_id")
+    @classmethod
+    def validate_customer_id(cls, v: str) -> str:
+        v_clean = v.strip().lower()
+        if not re.match(r"^[a-f0-9]{64}$", v_clean):
+            raise ValueError("customer_id must be a 64-character SHA-256 hex string.")
+        return v_clean
 
 
 # =====================================================
