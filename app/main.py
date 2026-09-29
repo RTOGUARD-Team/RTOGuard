@@ -27,7 +27,7 @@ def health():
     }
 
 @app.get("/health")
-def health():
+def health_check():
     return {
         "api": "ok",
         "mongodb": "connected" if ping_db() else "disconnected"
