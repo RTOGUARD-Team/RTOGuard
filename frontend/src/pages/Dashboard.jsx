@@ -1,71 +1,17 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import Header from "../components/Header";
 import Sidebar from "../components/Sidebar";
 import KpiCard from "../components/KpiCard";
 import OrderFeed from "../components/OrderFeed";
 import OrderDrawer from "../components/OrderDrawer";
-import Filters from "../components/Filters";
-import Analytics from "../components/Analytics";
-import SimulationCard from "../components/SimulationCard";
 
 import mockOrders from "../data/mockOrders";
 
 function Dashboard() {
   const [selectedOrder, setSelectedOrder] = useState(null);
 
-  const [riskFilter, setRiskFilter] = useState("All");
-  const [paymentFilter, setPaymentFilter] = useState("All");
-  const [sortBy, setSortBy] = useState("risk-desc");
-
-  // ========================================
-  // FILTERING AND SORTING
-  // ========================================
-
-  const filteredOrders = useMemo(() => {
-    let result = [...mockOrders];
-
-    // Risk filter
-    if (riskFilter !== "All") {
-      result = result.filter(
-        (order) => order.risk_level === riskFilter
-      );
-    }
-
-    // Payment filter
-    if (paymentFilter !== "All") {
-      result = result.filter(
-        (order) => order.payment_mode === paymentFilter
-      );
-    }
-
-    // Sorting
-    result.sort((a, b) => {
-      switch (sortBy) {
-        case "risk-desc":
-          return b.risk_score - a.risk_score;
-
-        case "risk-asc":
-          return a.risk_score - b.risk_score;
-
-        case "value-desc":
-          return b.order_value - a.order_value;
-
-        case "value-asc":
-          return a.order_value - b.order_value;
-
-        default:
-          return 0;
-      }
-    });
-
-    return result;
-  }, [riskFilter, paymentFilter, sortBy]);
-
-  // ========================================
-  // DASHBOARD CALCULATIONS
-  // ========================================
-
+  // Dashboard KPI calculations
   const totalOrders = mockOrders.length;
 
   const highRiskOrders = mockOrders.filter(
@@ -89,15 +35,16 @@ function Dashboard() {
     0
   );
 
-  // ========================================
-  // DASHBOARD UI
-  // ========================================
+  // Show only a few recent orders on Dashboard
+  const recentOrders = mockOrders.slice(0, 5);
 
   return (
     <div className="app">
+
       <Sidebar />
 
       <div className="main-content">
+
         <Header />
 
         <main className="dashboard">
@@ -111,9 +58,7 @@ function Dashboard() {
           </p>
 
 
-          {/* ==================================
-              KPI CARDS
-          ================================== */}
+          {/* KPI CARDS */}
 
           <section className="kpi-grid">
 
@@ -144,52 +89,26 @@ function Dashboard() {
           </section>
 
 
-          {/* ==================================
-              RISK ANALYTICS
-          ================================== */}
-
-          <Analytics orders={mockOrders} />
-
-
-          {/* ==================================
-              RISK SIMULATION
-          ================================== */}
-
-          <SimulationCard />
-
-
-          {/* ==================================
-              RECENT ORDERS
-          ================================== */}
+          {/* RECENT ORDERS */}
 
           <section className="order-section">
 
             <div className="section-header order-header">
 
               <div>
+
                 <h2>Recent Orders</h2>
 
                 <p>
-                  Showing {filteredOrders.length} of{" "}
-                  {mockOrders.length} orders
+                  Showing {recentOrders.length} recent orders
                 </p>
+
               </div>
-
-
-              <Filters
-                riskFilter={riskFilter}
-                setRiskFilter={setRiskFilter}
-                paymentFilter={paymentFilter}
-                setPaymentFilter={setPaymentFilter}
-                sortBy={sortBy}
-                setSortBy={setSortBy}
-              />
 
             </div>
 
-
             <OrderFeed
-              orders={filteredOrders}
+              orders={recentOrders}
               onSelect={setSelectedOrder}
             />
 
@@ -200,9 +119,7 @@ function Dashboard() {
       </div>
 
 
-      {/* ==================================
-          ORDER DETAILS DRAWER
-      ================================== */}
+      {/* ORDER DETAILS DRAWER */}
 
       <OrderDrawer
         order={selectedOrder}
