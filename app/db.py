@@ -1,0 +1,110 @@
+"""
+Database & In-Memory Data Store for RTOGuard.
+Provides customer historical data and pincode regional stats to feed the Risk Engine.
+"""
+
+from typing import Any, Dict, List, Union
+
+# Customer historical database (keyed by customer_id)
+MOCK_CUSTOMERS: Dict[Union[int, str], Dict[str, Any]] = {
+    1: {
+        "past_orders_count": 8,
+        "past_rto_orders": 1,
+        "past_rto_rate": 0.125,
+        "address_stability_score": 0.90,
+        "distinct_addresses_used": 1,
+        "tenure_months": 14,
+        "orders_per_month": 0.8,
+        "orders_last_90d": 3,
+        "prev_cod_orders": 6,
+        "prev_cod_success_rate": 0.85,
+        "cod_share_history": 0.75,
+        "avg_order_value": 1400.0,
+    },
+    2: {
+        "past_orders_count": 0,  # NEW customer (First-time buyer)
+        "past_rto_orders": 0,
+        "past_rto_rate": 0.0,
+        "address_stability_score": 0.50,
+        "distinct_addresses_used": 1,
+        "tenure_months": 0,
+        "orders_per_month": 0.0,
+        "orders_last_90d": 0,
+        "prev_cod_orders": 0,
+        "prev_cod_success_rate": 0.0,
+        "cod_share_history": 0.0,
+        "avg_order_value": 0.0,
+    },
+    "CUS-1001": {
+        "past_orders_count": 12,
+        "past_rto_orders": 4,
+        "past_rto_rate": 0.33,
+        "address_stability_score": 0.65,
+        "distinct_addresses_used": 3,
+        "tenure_months": 8,
+        "orders_per_month": 1.5,
+        "orders_last_90d": 4,
+        "prev_cod_orders": 10,
+        "prev_cod_success_rate": 0.60,
+        "cod_share_history": 0.83,
+        "avg_order_value": 1800.0,
+    },
+}
+
+# Regional pincode RTO benchmarks loaded from Riya's real pincode_stats.csv
+import csv as _csv
+from pathlib import Path as _Path
+
+def _load_pincode_stats() -> Dict[str, Dict[str, Any]]:
+    """Load real pincode data from data/pincode_stats.csv at startup."""
+    result: Dict[str, Dict[str, Any]] = {}
+    csv_path = _Path(__file__).resolve().parent / "data" / "pincode_stats.csv"
+    if csv_path.exists():
+        with open(csv_path, newline="", encoding="utf-8") as f:
+            for row in _csv.DictReader(f):
+                result[row["pincode"]] = {
+                    "historical_rto_rate": float(row["smoothed_rto_rate"]),
+                    "tier": int(row["tier"]),
+                    "pincode_valid": 1,
+                    "order_count": int(row["order_count"]),
+                }
+    return result
+
+PINCODE_DATA: Dict[str, Dict[str, Any]] = _load_pincode_stats()
+
+
+LOGGED_ORDERS: List[Dict[str, Any]] = []
+
+
+def get_customer_info(customer_id: Union[int, str]) -> Dict[str, Any]:
+    """Retrieve customer behavioral profile or return cold-start default for new buyers."""
+    return MOCK_CUSTOMERS.get(
+        customer_id,
+        {
+            "past_orders_count": 0,
+            "past_rto_orders": 0,
+            "past_rto_rate": 0.0,
+            "address_stability_score": 0.50,
+            "distinct_addresses_used": 1,
+            "tenure_months": 0,
+            "orders_per_month": 0.0,
+            "orders_last_90d": 0,
+            "prev_cod_orders": 0,
+            "prev_cod_success_rate": 0.0,
+            "cod_share_history": 0.0,
+            "avg_order_value": 0.0,
+        },
+    )
+
+
+def get_pincode_info(pincode: str) -> Dict[str, Any]:
+    """Retrieve pincode reliability stats or fallback to tier-2 default."""
+    return PINCODE_DATA.get(
+        pincode,
+        {"historical_rto_rate": 0.22, "tier": 2, "pincode_valid": 1, "order_count": 0},
+    )
+
+
+def log_order(order_data: Dict[str, Any]) -> None:
+    """Store evaluated order in memory log."""
+    LOGGED_ORDERS.append(order_data)
