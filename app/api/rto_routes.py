@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
-from app.schemas.rto import (
+from app.rto_schemas import (
     RecommendationRequest,
     CostRequest,
     SimulationRequest
