@@ -14,20 +14,21 @@ Direct-to-Consumer (D2C) brands in India experience severe Return-to-Origin (RTO
 * **Total Write-off (Logistics + CAC):** ₹450 – ₹900 per parcel
 * **Festive Risk Exposure:** 30%–35% of annual revenue occurs during peak festive windows (Navratri/Diwali), compounding default losses.
 
-**RTOGuard AI** replaces blunt, blanket policies (like blocking COD above fixed thresholds) with a dynamic **3-Tier Decision Matrix** powered by multi-signal risk scoring.
+**RTOGuard AI** replaces blunt, blanket policies (like blocking COD above fixed thresholds) with a dynamic **3-Tier Decision Matrix** powered by multi-signal risk scoring, synthetic data generation, and real-time checkout ingestion feeds.
 
 ---
 
 ## 🎯 Core Features
 
-- **⚡ Real-Time Checkout Risk Engine (`0.0` – `1.0`):** Evaluates buyer history, pincode reliability tier, order value, category risk, and festive volume multipliers.
+- **⚡ Real-Time Checkout Risk Engine (`0.0` – `1.0`):** Evaluates buyer history, pincode reliability tier, order value, category risk, address structural completeness, cart size anomalies, and festive volume multipliers.
 - **🚦 3-Tier Operational Action Matrix:**
-  - `0.0 - 0.3` **Low Risk** ➔ **Ship as Normal COD** (Zero checkout friction)
-  - `0.3 - 0.6` **Medium Risk** ➔ **Require Partial Prepaid Deposit** (Secures buyer intent)
-  - `0.6 - 1.0` **High Risk** ➔ **Route to Confirmation Call / Prepaid Only** (Requires manual verification before dispatch)
+  - 🟢 `0.0 - 0.3` **Low Risk** ➔ **Ship as Normal COD** (Zero checkout friction)
+  - 🟡 `0.3 - 0.6` **Medium Risk** ➔ **Require Partial Prepaid Deposit** (Secures buyer intent with delivery deposit)
+  - 🔴 `0.6 - 1.0` **High Risk** ➔ **Route to Confirmation Call / Prepaid Only** (Requires manual verification before dispatch)
 - **📈 Dual-Pass Replay Simulation:** Executes side-by-side financial comparison between **Pass A (Baseline Loss)** and **Pass B (AI-Mitigated Loss)** across order batches.
 - **💰 ROI Calculator:** Quantifies concrete financial savings in **₹ Saved per 1,000 Orders**.
-- **🎆 Festive Season Stress-Tester:** Simulates festive surge risk multipliers to evaluate operational resilience under peak holiday load.
+- **📦 Data Processing & Synthetic Generator (`rtoguard-data`):** Privacy-first data pipeline with Pydantic v2 schemas, cryptographic customer ID hashing (SHA-256), Bayesian pincode risk smoothing, and FastAPI data feeds.
+- **🔒 Privacy by Design:** Strict enforcement excluding all Personally Identifiable Information (PII) — zero names, phone numbers, or full street addresses stored anywhere.
 
 ---
 
@@ -35,32 +36,56 @@ Direct-to-Consumer (D2C) brands in India experience severe Return-to-Origin (RTO
 
 ```
 RTOGuard/
-├── app/
-│   ├── main.py            # FastAPI entry point & CORS configuration
-│   ├── config.py          # Environment settings & model parameters
-│   ├── db.py              # Database connection & session setup
-│   ├── models.py          # ORM data models (Customers, Orders, Pincodes)
-│   ├── schemas.py         # Pydantic request & response validation schemas
-│   ├── core/              # Scoring algorithm & simulation logic
-│   ├── routers/           # API endpoints (scoring, dashboard, simulation)
-│   └── services/          # Business logic & notifications
-├── frontend/
-│   └── app.js             # Interactive operations dashboard logic
-├── data/                  # Synthetic datasets & pincode risk mapping
-├── notebooks/             # Exploratory analysis & model validation
-├── tests/                 # Unit & API test suite
-├── PRD.md                 # Detailed Product Requirements Document
-└── requirements.txt       # Python dependencies
+├── app/                        # Main FastAPI backend application
+│   ├── main.py                 # FastAPI entry point & CORS configuration
+│   ├── config.py               # Environment settings & model parameters
+│   ├── db.py                   # Database connection & session setup
+│   ├── models.py               # ORM data models (Customers, Orders, Pincodes)
+│   ├── schemas.py              # Pydantic request & response validation schemas
+│   ├── core/                   # Scoring algorithm & simulation logic
+│   ├── routers/                # API endpoints (scoring, dashboard, simulation)
+│   └── services/               # Business logic & notifications
+├── rtoguard-data/              # Data generation, validation & feed sub-project
+│   ├── data/
+│   │   ├── raw/                # Generated raw CSV datasets
+│   │   └── processed/          # Transformed Parquet feature stores
+│   ├── src/
+│   │   ├── models.py           # Pydantic v2 schemas with PII guards
+│   │   ├── generator/          # Domain-driven synthetic checkout log generator
+│   │   ├── features/           # ML feature engineering & Bayesian pincode smoothing
+│   │   ├── feed/               # Real-time FastAPI ingestion & lookup server
+│   │   └── notify/             # 3-Tier risk action notifier
+│   ├── tests/                  # Pytest integration test suite (19 tests)
+│   ├── schema.md               # Detailed Data Dictionary & security compliance rules
+│   ├── requirements.txt        # Sub-project dependencies (pandas, numpy, scikit-learn, etc.)
+│   └── README.md               # rtoguard-data module documentation
+├── frontend/                   # Operations Dashboard frontend (HTML5/CSS3/Vanilla JS)
+├── notebooks/                  # Exploratory analysis & model validation
+├── tests/                      # Core test suite
+├── PRD.md                      # Product Requirements Document
+├── requirements.txt            # System dependencies
+└── README.md                   # System documentation
 ```
+
+---
+
+## 🔒 Privacy & Compliance Policy
+
+`RTOGuard` enforces strict **Privacy by Design**:
+- ❌ **Zero PII:** No customer names, phone numbers, email addresses, street names, flat numbers, or full residential addresses are collected or stored.
+- 🔐 **Cryptographic Anonymization:** `customer_id` is strictly stored as a **64-character SHA-256 hex digest** (`^[a-f0-9]{64}$`).
+- 📍 **Geographic Aggregation:** Location information is restricted to 6-digit Indian Postal PIN codes.
 
 ---
 
 ## ⚙️ Tech Stack
 
-* **Backend Framework:** [FastAPI](https://fastapi.tiangolo.com/) (Python 3.10+)
+* **Backend Framework:** [FastAPI](https://fastapi.tiangolo.com/) (Python 3.11+)
 * **ASGI Server:** [Uvicorn](https://www.uvicorn.org/)
-* **Data Processing & ML:** [Pandas](https://pandas.pydata.org/), [NumPy](https://numpy.org/), [Scikit-learn](https://scikit-learn.org/)
+* **Data Processing & ML:** [Pandas](https://pandas.pydata.org/), [NumPy](https://numpy.org/), [Scikit-learn](https://scikit-learn.org/), [PyArrow](https://arrow.apache.org/docs/python/)
 * **Schema Validation:** [Pydantic v2](https://docs.pydantic.dev/)
+* **Synthetic Generation:** [Faker](https://faker.readthedocs.io/) & Cryptographic Hashing (`hashlib`)
+* **Testing:** [Pytest](https://docs.pytest.org/), [HTTPX](https://www.python-httpx.org/)
 * **Frontend:** Modern Vanilla JavaScript, HTML5 & CSS3 Operations Dashboard
 
 ---
@@ -73,7 +98,7 @@ Evaluates an incoming checkout order and returns the RTO risk score along with a
 **Request Payload:**
 ```json
 {
-  "customer_id": "CUST-98231",
+  "customer_id": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
   "order_value": 2450.00,
   "payment_mode": "COD",
   "pincode": "110001",
@@ -98,21 +123,16 @@ Evaluates an incoming checkout order and returns the RTO risk score along with a
 }
 ```
 
-### 2. Dual-Pass Batch Simulation (`GET /api/simulate`)
+### 2. Data Feed Service Endpoints (`rtoguard-data/src/feed/data_feed.py`)
+- **`GET /`**: Service welcome & active routes index.
+- **`GET /health`**: Data feed health check & loaded dataset counts.
+- **`POST /feed/order`**: Ingest and validate checkout orders against Pydantic models.
+- **`POST /feed/customer`**: Ingest SHA-256 hashed customer profiles.
+- **`POST /feed/pincode`**: Ingest and update pincode risk statistics.
+- **`GET /stats/pincode/{pincode}`**: Retrieve tier (1/2/3) and Bayesian smoothed RTO rate for any 6-digit PIN code.
+
+### 3. Dual-Pass Batch Simulation (`GET /api/simulate`)
 Simulates baseline vs. AI-intervened outcomes on order historical datasets.
-
-**Query Parameters:**
-- `batch_size`: Number of orders to simulate (e.g., `1000`)
-- `festive_mode`: `true` | `false`
-
-**Response Summary:**
-- `baseline_rto_loss`: Total losses without intervention
-- `ai_rto_loss`: Total losses after RTOGuard interventions
-- `net_rupees_saved`: Net financial savings (Primary KPI)
-- `rto_rate_reduction`: Percentage drop in RTO default rate
-
-### 3. Dashboard Metrics (`GET /api/dashboard/summary`)
-Returns aggregated metrics, high-risk order counts, and tier distribution for operations teams.
 
 ---
 
@@ -140,16 +160,35 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 3. Run Development Server
+### 3. Generate Synthetic Datasets
 
 ```bash
-uvicorn app.main:app --reload
+cd rtoguard-data
+python -m src.generator.synthetic_data
+cd ..
 ```
 
-The FastAPI server will launch at `http://127.0.0.1:8000`.
+### 4. Run Development Servers
 
-* **Interactive API Documentation (Swagger UI):** [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs)
-* **ReDoc Documentation:** [`http://127.0.0.1:8000/redoc`](http://127.0.0.1:8000/redoc)
+**Run Main FastAPI Application:**
+```bash
+uvicorn app.main:app --reload --port 8000
+```
+
+**Run Data Feed Service (Optional):**
+```bash
+uvicorn rtoguard-data.src.feed.data_feed:app --reload --port 8001
+```
+
+- **Interactive API Documentation (Swagger UI):** [`http://127.0.0.1:8000/docs`](http://127.0.0.1:8000/docs)
+- **Data Feed Docs:** [`http://127.0.0.1:8001/docs`](http://127.0.0.1:8001/docs)
+
+### 5. Run Test Suite
+
+```bash
+cd rtoguard-data
+pytest tests/ -v
+```
 
 ---
 
