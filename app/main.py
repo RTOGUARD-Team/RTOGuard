@@ -19,7 +19,7 @@ app.include_router(rto_router)
 
 
 @app.get("/")
-def health():
+def root():
     return {
         "status": "ok",
         "service": "RTOGuard AI",

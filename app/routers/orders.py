@@ -19,7 +19,8 @@ def high_risk(threshold: float = Query(0.6, ge=0.0, le=1.0)):
     results = []
     for o in MOCK_ORDERS:
         req = OrderRequest(**{k: v for k, v in o.items() if k != "order_id"})
-        risk = score_order(req)
+        score_result = score_order(req)
+        risk = score_result["risk_score"]
         if risk >= threshold:
             action, reason = recommend_action(risk)
             results.append(HighRiskOrder(
