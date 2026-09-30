@@ -19,7 +19,9 @@ from typing import Any, Dict, List, Union
 import joblib
 import pandas as pd
 
-from app.core.store import get_customer_info, get_pincode_info
+from app.core.customer_repository import get_customer_profile as get_customer_info
+from app.core.store import get_pincode_info
+
 
 MODEL_DIR = Path(__file__).resolve().parent / "models"
 OLD_MODEL_PATH = MODEL_DIR / "rtoguard_old_model.joblib"

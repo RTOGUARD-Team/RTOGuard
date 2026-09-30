@@ -103,7 +103,7 @@ class RawOrder(BaseModel):
 
     customer_id: str = Field(
         ...,
-        description="SHA-256 hashed customer identifier (64 hex characters)."
+        description="Customer identifier — numeric (1, 101) or string ('CUS-1001')."
     )
 
     order_value: float = Field(
@@ -119,13 +119,11 @@ class RawOrder(BaseModel):
 
     is_festive_window: bool = False
 
-    @field_validator("customer_id")
+    @field_validator("customer_id", mode="before")
     @classmethod
-    def validate_customer_id(cls, v: str) -> str:
-        v_clean = v.strip().lower()
-        if not re.match(r"^[a-f0-9]{64}$", v_clean):
-            raise ValueError("customer_id must be a 64-character SHA-256 hex string.")
-        return v_clean
+    def coerce_customer_id(cls, v) -> str:
+        """Accept int or string customer IDs — convert all to string for storage."""
+        return str(v).strip()
 
 
 # =====================================================
