@@ -133,3 +133,16 @@ class RawOrder(BaseModel):
 class RawSimulationRequest(BaseModel):
 
     orders: list[RawOrder]
+
+
+# =====================================================
+# ORDER OUTCOME REQUEST (Feedback Loop)
+# =====================================================
+
+class OrderOutcomeRequest(BaseModel):
+    order_id: str
+    status: str = Field(
+        ...,
+        description="Delivery outcome: 'DELIVERED' or 'RTO' / 'RETURNED'"
+    )
+    notes: str = ""

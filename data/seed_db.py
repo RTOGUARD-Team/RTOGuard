@@ -121,6 +121,22 @@ CUSTOMERS = [
         "avg_order_value"        : 1800.0,
         "created_at"             : _now(),
     },
+   {
+  "customer_id": 104,
+  "name": "Arjun Kulkarni",
+  "past_orders_count": 11,
+  "past_rto_orders": 5,
+  "past_rto_rate": 0.455,
+  "address_stability_score": 0.62,
+  "distinct_addresses_used": 3,
+  "tenure_months": 7,
+  "orders_per_month": 1.57,
+  "orders_last_90d": 5,
+  "prev_cod_orders": 8,
+  "prev_cod_success_rate": 0.50,
+  "cod_share_history": 0.73,
+  "avg_order_value": 2100.0
+},
 ]
 
 # ── Sample orders ─────────────────────────────────────────────────────────────
@@ -146,6 +162,16 @@ ORDERS = [
         "is_festive_window": False,
         "created_at"      : _now(),
     },
+    {
+    "order_id": "ORD-003",
+    "customer_id": 104,
+    "order_value": 4799.0,
+    "payment_mode": "COD",
+    "pincode": "560001",
+    "category": "Home & Kitchen",
+    "is_festive_window": False,
+    "created_at": _now(),
+},
 ]
 
 
