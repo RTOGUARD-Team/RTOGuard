@@ -3,7 +3,7 @@ Populate a rich, diverse dataset of Customers, Orders, and Predictions
 directly into MongoDB Atlas for realistic real-time dashboard analytics.
 """
 
-from app.db import customers_collection, orders_collection, predictions_collection
+from app.db import customers_collection, orders_collection, predictions_collection, strip_forbidden_fields
 from app.api.rto_routes import score_order
 from app.rto_schemas import RawOrder
 from datetime import datetime, timezone, timedelta
@@ -15,7 +15,6 @@ def _dt(days_ago=0, hours_ago=0):
 CUSTOMERS_DATA = [
     {
         "customer_id": "1",
-        "name": "Amit Shah",
         "past_orders_count": 14,
         "past_rto_orders": 1,
         "past_rto_rate": 0.0714,
@@ -32,7 +31,6 @@ CUSTOMERS_DATA = [
     },
     {
         "customer_id": "101",
-        "name": "Rajan Mehta",
         "past_orders_count": 12,
         "past_rto_orders": 7,
         "past_rto_rate": 0.5833,
@@ -49,7 +47,6 @@ CUSTOMERS_DATA = [
     },
     {
         "customer_id": "102",
-        "name": "Sneha Patel",
         "past_orders_count": 9,
         "past_rto_orders": 1,
         "past_rto_rate": 0.1111,
@@ -66,7 +63,6 @@ CUSTOMERS_DATA = [
     },
     {
         "customer_id": "103",
-        "name": "Rohan Verma",
         "past_orders_count": 16,
         "past_rto_orders": 2,
         "past_rto_rate": 0.1250,
@@ -83,7 +79,6 @@ CUSTOMERS_DATA = [
     },
     {
         "customer_id": "104",
-        "name": "Arjun Kulkarni",
         "past_orders_count": 11,
         "past_rto_orders": 5,
         "past_rto_rate": 0.4545,
@@ -100,7 +95,6 @@ CUSTOMERS_DATA = [
     },
     {
         "customer_id": "CUS-1001",
-        "name": "Vikram Joshi",
         "past_orders_count": 13,
         "past_rto_orders": 4,
         "past_rto_rate": 0.3077,
@@ -117,7 +111,6 @@ CUSTOMERS_DATA = [
     },
     {
         "customer_id": "CUS-1002",
-        "name": "Neha Sharma",
         "past_orders_count": 0,
         "past_rto_orders": 0,
         "past_rto_rate": 0.0,
@@ -134,7 +127,6 @@ CUSTOMERS_DATA = [
     },
     {
         "customer_id": "CUS-1003",
-        "name": "Aditya Rao",
         "past_orders_count": 19,
         "past_rto_orders": 1,
         "past_rto_rate": 0.0526,
@@ -151,7 +143,6 @@ CUSTOMERS_DATA = [
     },
     {
         "customer_id": "CUS-1004",
-        "name": "Kavita Reddy",
         "past_orders_count": 7,
         "past_rto_orders": 4,
         "past_rto_rate": 0.5714,
@@ -168,7 +159,6 @@ CUSTOMERS_DATA = [
     },
     {
         "customer_id": "CUS-1005",
-        "name": "Siddharth Jain",
         "past_orders_count": 0,
         "past_rto_orders": 0,
         "past_rto_rate": 0.0,
@@ -216,7 +206,7 @@ def populate_database():
 
     # 1. Insert rich customer profiles
     for c in CUSTOMERS_DATA:
-        customers_collection.insert_one(c)
+        customers_collection.insert_one(strip_forbidden_fields(c))
     print(f"[OK] Inserted {len(CUSTOMERS_DATA)} customer profiles into 'customers' collection.")
 
     # 2. Score and evaluate each order through the full ML risk pipeline

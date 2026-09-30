@@ -112,8 +112,6 @@ def score_order(order: Union[Dict[str, Any], Any]) -> Dict[str, Any]:
             "top_factors": ["Order is prepaid (near-zero RTO default exposure)"],
         }
 
-    customer_id = od.get("customer_id", 0)
-    customer_info = get_customer_info(customer_id)
     pincode_str = str(od.get("pincode", "110001"))
     pincode_info = get_pincode_info(pincode_str)
 
@@ -121,8 +119,42 @@ def score_order(order: Union[Dict[str, Any], Any]) -> Dict[str, Any]:
     is_festive = int(bool(od.get("is_festive_window", False)))
     category = str(od.get("category", od.get("product_category", "clothing"))).lower()
 
-    # 2. Determine Customer Type (OLD = returning customer, NEW = cold start)
-    is_old_customer = customer_info.get("past_orders_count", 0) > 0
+    # 2. Determine customer profile: prioritize inline history fields if supplied,
+    # otherwise fall back to database / customer_repository lookup.
+    has_inline_history = any(k in od for k in ("past_orders_count", "past_orders", "historical_orders"))
+
+    if has_inline_history:
+        past_orders = int(od.get("past_orders_count", od.get("past_orders", od.get("historical_orders", 0))))
+        past_rtos = int(od.get("past_rto_orders", od.get("past_rtos", od.get("historical_rto_orders", 0))))
+        rto_rate = float(od.get("past_rto_rate", od.get("historical_rto_rate", (past_rtos / max(past_orders, 1)) if past_orders else 0.0)))
+
+        raw_cust_type = str(od.get("customer_type", "")).upper()
+        if raw_cust_type in ("OLD", "RETURNING"):
+            is_old_customer = True
+        elif raw_cust_type == "NEW":
+            is_old_customer = False
+        else:
+            is_old_customer = past_orders > 0
+
+        customer_info = {
+            "past_orders_count": past_orders,
+            "past_rto_orders": past_rtos,
+            "past_rto_rate": rto_rate,
+            "address_stability_score": float(od.get("address_stability_score", 0.85 if is_old_customer else 0.50)),
+            "distinct_addresses_used": int(od.get("distinct_addresses_used", 1)),
+            "tenure_months": int(od.get("tenure_months", max(1, past_orders // 2) if is_old_customer else 0)),
+            "orders_per_month": float(od.get("orders_per_month", 0.8 if is_old_customer else 0.0)),
+            "orders_last_90d": int(od.get("orders_last_90d", min(past_orders, 2) if is_old_customer else 0)),
+            "prev_cod_orders": int(od.get("prev_cod_orders", max(past_orders - 1, 0) if is_old_customer else 0)),
+            "prev_cod_success_rate": float(od.get("prev_cod_success_rate", max(0.0, 1.0 - rto_rate) if is_old_customer else 0.0)),
+            "cod_share_history": float(od.get("cod_share_history", 0.70 if is_old_customer else 0.0)),
+            "avg_order_value": float(od.get("avg_order_value", od.get("usual_order_value", order_value))),
+        }
+    else:
+        customer_id = od.get("customer_id", 0)
+        customer_info = get_customer_info(customer_id)
+        is_old_customer = customer_info.get("past_orders_count", 0) > 0
+
     customer_type = "OLD" if is_old_customer else "NEW"
 
     # 3. Build DataFrame matching Riya's exact columns

@@ -48,161 +48,148 @@ class SimulationEngine:
         # TOTALS
         # ---------------------------------------------
 
-        total_baseline_probability = 0
+        total_baseline_rto_orders = 0.0
 
-        total_intervention_probability = 0
+        total_intervention_rto_orders = 0.0
 
-        total_baseline_loss = 0
+        total_baseline_loss = 0.0
 
-        total_intervention_loss = 0
+        total_intervention_loss = 0.0
 
-        total_rto_loss_avoided = 0
+        total_rto_loss_avoided = 0.0
 
-        total_intervention_cost = 0
+        total_intervention_cost = 0.0
 
-        total_conversion_loss = 0
+        total_conversion_loss = 0.0
 
-        total_net_impact = 0
+        total_net_impact = 0.0
 
         # ---------------------------------------------
         # ACTION COUNTS
         # ---------------------------------------------
 
         action_counts = {
-
             "SHIP_NORMAL": 0,
-
             "PARTIAL_DEPOSIT": 0,
-
             "CONFIRMATION": 0,
-
             "NO_COD_INTERVENTION": 0
         }
 
         order_results = []
+        total_rto_cost = self.cost_calculator.assumptions.get_total_rto_cost()
+        margin = self.cost_calculator.assumptions.contribution_margin_rate
 
         # =============================================
-        # PROCESS EVERY ORDER
+        # PROCESS EVERY ORDER AGAINST GROUND TRUTH
         # =============================================
 
         for order in orders:
 
             # -----------------------------------------
-            # ACTION RECOMMENDATION
+            # 1. GROUND TRUTH OUTCOME RESOLUTION
             # -----------------------------------------
+            raw_outcome = str(order.get("actual_outcome") or order.get("outcome") or "").upper()
+            if raw_outcome in ("RTO", "RETURNED"):
+                is_rto = True
+            elif raw_outcome in ("DELIVERED", "COMPLETED", "SUCCESS"):
+                is_rto = False
+            else:
+                is_rto = (order.get("risk_score", 0.0) >= 0.50)
 
+            # -----------------------------------------
+            # PASS A: BASELINE (Zero intervention)
+            # Evaluated against actual ground truth
+            # -----------------------------------------
+            order_baseline_loss = total_rto_cost if is_rto else 0.0
+            order_baseline_rto = 1.0 if is_rto else 0.0
+            total_baseline_loss += order_baseline_loss
+            total_baseline_rto_orders += order_baseline_rto
+
+            # -----------------------------------------
+            # PASS B: AI-MITIGATED
+            # Model decides action from predicted risk
+            # -----------------------------------------
             recommendation = (
                 self.recommendation_engine
                 .recommend(
                     risk_score=order["risk_score"],
-
                     order_value=order["order_value"],
-
                     payment_mode=order["payment_mode"],
-
-                    top_factors=order.get(
-                        "top_factors",
-                        []
-                    )
+                    top_factors=order.get("top_factors", [])
                 )
             )
 
-            # -----------------------------------------
-            # COST CALCULATION
-            # -----------------------------------------
+            action = recommendation["recommended_action"]
+            suggested_deposit = recommendation["suggested_deposit"]
+            action_counts[action] = action_counts.get(action, 0) + 1
 
-            economics = (
-                self.cost_calculator
-                .calculate(
+            order_val = float(order["order_value"])
 
-                    order_value=
-                        order["order_value"],
-
-                    risk_score=
-                        order["risk_score"],
-
-                    action=
-                        recommendation[
-                            "recommended_action"
-                        ],
-
-                    suggested_deposit=
-                        recommendation[
-                            "suggested_deposit"
-                        ]
-                )
+            # 1. Direct intervention cost
+            ord_intervention_cost = self.cost_calculator.calculate_intervention_cost(
+                order_value=order_val,
+                action=action,
+                suggested_deposit=suggested_deposit
             )
 
-            action = (
-                recommendation[
-                    "recommended_action"
-                ]
-            )
+            # 2. Evaluate financial impact against ground truth
+            if action in ("SHIP_NORMAL", "NO_COD_INTERVENTION"):
+                ord_mitigated_rto_loss = total_rto_cost if is_rto else 0.0
+                ord_mitigated_rto_orders = 1.0 if is_rto else 0.0
+                ord_conversion_loss = 0.0
+            elif action == "PARTIAL_DEPOSIT":
+                reduction = self.cost_calculator.assumptions.partial_deposit_rto_reduction
+                abandonment = self.cost_calculator.assumptions.partial_deposit_abandonment_rate
+                if is_rto:
+                    ord_mitigated_rto_loss = total_rto_cost * (1.0 - reduction)
+                    ord_mitigated_rto_orders = 1.0 - reduction
+                    ord_conversion_loss = 0.0
+                else:
+                    ord_mitigated_rto_loss = 0.0
+                    ord_mitigated_rto_orders = 0.0
+                    ord_conversion_loss = order_val * margin * abandonment
+            elif action == "CONFIRMATION":
+                reduction = self.cost_calculator.assumptions.confirmation_rto_reduction
+                abandonment = self.cost_calculator.assumptions.confirmation_abandonment_rate
+                if is_rto:
+                    ord_mitigated_rto_loss = total_rto_cost * (1.0 - reduction)
+                    ord_mitigated_rto_orders = 1.0 - reduction
+                    ord_conversion_loss = 0.0
+                else:
+                    ord_mitigated_rto_loss = 0.0
+                    ord_mitigated_rto_orders = 0.0
+                    ord_conversion_loss = order_val * margin * abandonment
+            else:
+                ord_mitigated_rto_loss = total_rto_cost if is_rto else 0.0
+                ord_mitigated_rto_orders = 1.0 if is_rto else 0.0
+                ord_conversion_loss = 0.0
 
-            action_counts[action] += 1
+            ord_loss_avoided = order_baseline_loss - ord_mitigated_rto_loss
+            ord_net_impact = ord_loss_avoided - ord_intervention_cost - ord_conversion_loss
+            ord_total_intervention_loss = ord_mitigated_rto_loss + ord_intervention_cost + ord_conversion_loss
 
-            # -----------------------------------------
-            # ADD TO TOTALS
-            # -----------------------------------------
+            total_intervention_loss += ord_total_intervention_loss
+            total_intervention_rto_orders += ord_mitigated_rto_orders
+            total_rto_loss_avoided += ord_loss_avoided
+            total_intervention_cost += ord_intervention_cost
+            total_conversion_loss += ord_conversion_loss
+            total_net_impact += ord_net_impact
 
-            total_baseline_probability += (
-                economics[
-                    "baseline_rto_probability"
-                ]
-            )
-
-            total_intervention_probability += (
-                economics[
-                    "intervention_rto_probability"
-                ]
-            )
-
-            total_baseline_loss += (
-                economics[
-                    "baseline_expected_rto_loss"
-                ]
-            )
-
-            total_intervention_loss += (
-                economics[
-                    "intervention_expected_rto_loss"
-                ]
-            )
-
-            total_rto_loss_avoided += (
-                economics[
-                    "rto_loss_avoided"
-                ]
-            )
-
-            total_intervention_cost += (
-                economics[
-                    "intervention_cost"
-                ]
-            )
-
-            total_conversion_loss += (
-                economics[
-                    "conversion_loss_impact"
-                ]
-            )
-
-            total_net_impact += (
-                economics[
-                    "net_impact"
-                ]
-            )
-
-            # -----------------------------------------
-            # SAVE ORDER RESULT
-            # -----------------------------------------
+            economics = {
+                "baseline_rto_probability": order_baseline_rto,
+                "intervention_rto_probability": round(ord_mitigated_rto_orders, 4),
+                "baseline_expected_rto_loss": round(order_baseline_loss, 2),
+                "intervention_expected_rto_loss": round(ord_total_intervention_loss, 2),
+                "rto_loss_avoided": round(ord_loss_avoided, 2),
+                "intervention_cost": round(ord_intervention_cost, 2),
+                "conversion_loss_impact": round(ord_conversion_loss, 2),
+                "net_impact": round(ord_net_impact, 2),
+            }
 
             order_results.append({
-
                 **order,
-
+                "outcome": "RTO" if is_rto else "DELIVERED",
                 **recommendation,
-
                 **economics
             })
 
@@ -213,12 +200,12 @@ class SimulationEngine:
         number_of_orders = len(orders)
 
         baseline_rto_rate = (
-            total_baseline_probability
+            total_baseline_rto_orders
             / number_of_orders
         )
 
         intervention_rto_rate = (
-            total_intervention_probability
+            total_intervention_rto_orders
             / number_of_orders
         )
 
@@ -252,7 +239,7 @@ class SimulationEngine:
 
                 "expected_rto_orders":
                     round(
-                        total_baseline_probability,
+                        total_baseline_rto_orders,
                         2
                     ),
 
@@ -273,7 +260,7 @@ class SimulationEngine:
 
                 "expected_rto_orders":
                     round(
-                        total_intervention_probability,
+                        total_intervention_rto_orders,
                         2
                     ),
 
@@ -424,7 +411,10 @@ class SimulationEngine:
                     risk_score,
 
                 "top_factors":
-                    []
+                    [],
+
+                "outcome":
+                    "RTO" if random.random() < risk_score else "DELIVERED"
             })
 
         return orders

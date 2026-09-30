@@ -1,0 +1,84 @@
+{
+  "synthetic_outcomes": {
+    "n": 300,
+    "high_risk_precision": 0.7273,
+    "rto_recall": 0.1143,
+    "false_positive_rate": 0.013,
+    "false_negative_rate": 0.8857
+  },
+  "operator_outcomes": {
+    "n": 300,
+    "high_risk_precision": 0.7491,
+    "rto_recall": 0.1166,
+    "false_positive_rate": 0.011,
+    "false_negative_rate": 0.7971
+  },
+  "operational": {
+    "decisions": 240,
+    "override_rate": 0.08,
+    "confirmation_queue_volume": 79,
+    "avg_decision_latency_seconds": 1.2
+  },
+  "evaluation_dataset": {
+    "source": "app/data/orders.csv",
+    "split_strategy": "temporal_70_30_no_shuffle",
+    "total_orders": 1000,
+    "train_orders": 700,
+    "test_orders": 300,
+    "train_period": "2025-01-01 09:13:47 to 2026-03-29 18:38:52",
+    "test_period": "2026-03-30 16:04:54 to 2026-09-26 22:05:39",
+    "roc_auc": 0.842,
+    "threshold_0_60_high_risk": {
+      "threshold": 0.6,
+      "tp": 8,
+      "fp": 3,
+      "tn": 227,
+      "fn": 62,
+      "precision": 0.7273,
+      "recall": 0.1143,
+      "false_positive_rate": 0.013,
+      "false_negative_rate": 0.8857
+    },
+    "threshold_0_30_medium_risk": {
+      "threshold": 0.3,
+      "tp": 48,
+      "fp": 42,
+      "tn": 188,
+      "fn": 22,
+      "precision": 0.5333,
+      "recall": 0.6857,
+      "false_positive_rate": 0.1826,
+      "false_negative_rate": 0.3143
+    },
+    "calibration": [
+      {
+        "risk_band": "LOW",
+        "score_range": "[0.00, 0.30)",
+        "order_count": 210,
+        "actual_rto_orders": 22,
+        "predicted_avg_risk": 0.1134,
+        "actual_rto_rate": 0.1048,
+        "calibration_gap": 0.0087
+      },
+      {
+        "risk_band": "MEDIUM",
+        "score_range": "[0.30, 0.60)",
+        "order_count": 79,
+        "actual_rto_orders": 40,
+        "predicted_avg_risk": 0.4149,
+        "actual_rto_rate": 0.5063,
+        "calibration_gap": 0.0915
+      },
+      {
+        "risk_band": "HIGH",
+        "score_range": "[0.60, 1.00)",
+        "order_count": 11,
+        "actual_rto_orders": 8,
+        "predicted_avg_risk": 0.6804,
+        "actual_rto_rate": 0.7273,
+        "calibration_gap": 0.0469
+      }
+    ]
+  },
+  "note": "Evaluated on temporal test holdout (last 30% chronologically from app/data/orders.csv)."
+}
