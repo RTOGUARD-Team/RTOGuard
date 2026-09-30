@@ -1,16 +1,20 @@
 import { useState } from "react";
 import RiskBadge from "./RiskBadge";
+import { scoreOrder } from "../services/api";
 
 function SimulationCard() {
   const [formData, setFormData] = useState({
-    order_value: "",
+    customer_id: "1",
+    order_value: "1400",
     payment_mode: "COD",
-    pincode: "",
+    pincode: "411001",
     category: "Apparel",
     is_festive_window: false,
   });
 
   const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
@@ -21,80 +25,57 @@ function SimulationCard() {
     }));
   };
 
-  const calculateRisk = () => {
-    const orderValue = Number(formData.order_value);
-
-    let riskScore = 0;
-    const reasons = [];
-
-    if (orderValue > 2000) {
-      riskScore += 0.35;
-      reasons.push("High Order Value (> ₹2,000)");
-    } else if (orderValue > 1000) {
-      riskScore += 0.15;
-      reasons.push("Medium Order Value");
+  const calculateRisk = async () => {
+    if (!formData.order_value || Number(formData.order_value) <= 0) {
+      setError("Please enter a valid order value.");
+      return;
     }
 
-    if (formData.payment_mode === "COD") {
-      riskScore += 0.15;
-      reasons.push("Cash on Delivery");
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Connect to Enterprise ML Risk Engine & Cost Calculator via Backend API
+      const evaluatedDecision = await scoreOrder({
+        order_id: `SIM-${Date.now().toString().slice(-6)}`,
+        customer_id: formData.customer_id.trim() || "1",
+        order_value: Number(formData.order_value),
+        payment_mode: formData.payment_mode,
+        pincode: formData.pincode.trim() || "110001",
+        category: formData.category,
+        is_festive_window: Boolean(formData.is_festive_window),
+      });
+
+      setResult(evaluatedDecision);
+    } catch (err) {
+      console.error("Simulation error:", err);
+      setError(err.message || "Failed to score order. Ensure backend server is running.");
+    } finally {
+      setLoading(false);
     }
-
-    if (formData.is_festive_window) {
-      riskScore += 0.20;
-      reasons.push("Festive Window Multiplier Active");
-    }
-
-    if (formData.pincode.startsWith("11")) {
-      riskScore += 0.10;
-      reasons.push("Pincode Risk Baseline");
-    }
-
-    riskScore = Math.min(riskScore, 1);
-
-    let riskLevel;
-    let recommendedAction;
-
-    if (riskScore < 0.3) {
-      riskLevel = "Low";
-      recommendedAction = "Ship Normal COD";
-    } else if (riskScore < 0.6) {
-      riskLevel = "Medium";
-      recommendedAction = "Require Partial Prepaid Deposit";
-    } else {
-      riskLevel = "High";
-      recommendedAction = "Confirmation Call / Prepaid Only";
-    }
-
-    setResult({
-      risk_score: riskScore,
-      risk_level: riskLevel,
-      reasons,
-      recommended_action: recommendedAction,
-    });
   };
 
   return (
-    <section className="simulation-section">
-      <div className="simulation-header">
-        <div>
-          <h2>Risk Simulation</h2>
-          <p>
-            Simulate a COD order and evaluate its RTO risk.
-          </p>
-        </div>
-      </div>
-
+    <section className="simulation-card">
       <div className="simulation-grid">
         <div className="simulation-form">
-          <h3>Order Details</h3>
+          <label>
+            Customer ID (Lookup / History)
+            <input
+              type="text"
+              name="customer_id"
+              placeholder="e.g. 1, 101, or CUS-1001"
+              value={formData.customer_id}
+              onChange={handleChange}
+            />
+          </label>
 
           <label>
-            Order Value
+            Order Value (₹)
             <input
               type="number"
               name="order_value"
-              placeholder="e.g. 2450"
+              placeholder="e.g. 2500"
               value={formData.order_value}
               onChange={handleChange}
             />
@@ -107,24 +88,24 @@ function SimulationCard() {
               value={formData.payment_mode}
               onChange={handleChange}
             >
-              <option value="COD">COD</option>
-              <option value="Prepaid">Prepaid</option>
+              <option value="COD">Cash on Delivery (COD)</option>
+              <option value="PREPAID">Prepaid</option>
             </select>
           </label>
 
           <label>
-            Pincode
+            Delivery Pincode
             <input
               type="text"
               name="pincode"
-              placeholder="e.g. 110001"
+              placeholder="e.g. 411001"
               value={formData.pincode}
               onChange={handleChange}
             />
           </label>
 
           <label>
-            Category
+            Product Category
             <select
               name="category"
               value={formData.category}
@@ -133,9 +114,7 @@ function SimulationCard() {
               <option value="Apparel">Apparel</option>
               <option value="Electronics">Electronics</option>
               <option value="Fashion">Fashion</option>
-              <option value="Home & Kitchen">
-                Home & Kitchen
-              </option>
+              <option value="Home & Kitchen">Home & Kitchen</option>
             </select>
           </label>
 
@@ -146,15 +125,17 @@ function SimulationCard() {
               checked={formData.is_festive_window}
               onChange={handleChange}
             />
-
-            Festive Window
+            Festive Window Multiplier
           </label>
+
+          {error && <div style={{ color: "#ef4444", fontSize: "0.875rem", marginTop: "0.5rem" }}>{error}</div>}
 
           <button
             className="simulate-button"
             onClick={calculateRisk}
+            disabled={loading}
           >
-            Analyze Risk
+            {loading ? "Analyzing Models..." : "Analyze Risk (Enterprise Engine)"}
           </button>
         </div>
 
@@ -165,42 +146,63 @@ function SimulationCard() {
               <p>
                 Enter order details and click
                 <strong> Analyze Risk </strong>
-                to see the prediction.
+                to run live ML inference.
               </p>
             </div>
           ) : (
             <>
               <div className="result-header">
                 <div>
-                  <span>Risk Score</span>
-
-                  <strong>
+                  <span>Predicted Risk Score</span>
+                  <strong style={{ fontSize: "1.75rem", display: "block", color: "#111827" }}>
                     {Math.round(result.risk_score * 100)}%
                   </strong>
+                  <small style={{ color: "#6b7280" }}>
+                    Status: <strong>{result.customer_status?.toUpperCase() || "EVALUATED"}</strong>
+                  </small>
                 </div>
 
                 <RiskBadge level={result.risk_level} />
               </div>
 
               <div className="result-section">
-                <h3>Why is this risky?</h3>
-
-                {result.reasons.length > 0 ? (
+                <h3>Risk Driving Factors (ML Explainability)</h3>
+                {result.top_factors && result.top_factors.length > 0 ? (
                   <ul className="reason-list">
-                    {result.reasons.map((reason, index) => (
-                      <li key={index}>{reason}</li>
+                    {result.top_factors.map((factor, index) => (
+                      <li key={index}>{factor}</li>
                     ))}
                   </ul>
                 ) : (
-                  <p>No major risk factors detected.</p>
+                  <p>No adverse risk signals detected.</p>
                 )}
               </div>
 
               <div className="result-section">
-                <h3>Recommended Action</h3>
-
-                <div className="recommendation">
+                <h3>Store Manager Recommendation</h3>
+                <div className="recommendation" style={{ fontWeight: 600, padding: "0.75rem 1rem", backgroundColor: "#f3f4f6", borderRadius: "8px", borderLeft: "4px solid #3b82f6" }}>
                   {result.recommended_action}
+                  {result.suggested_deposit > 0 && (
+                    <div style={{ marginTop: "4px", fontSize: "0.85rem", color: "#4b5563" }}>
+                      Suggested Advance Deposit: <strong>₹{result.suggested_deposit}</strong>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="result-section" style={{ borderTop: "1px solid #e5e7eb", paddingTop: "0.75rem", marginTop: "0.75rem" }}>
+                <h3>Economic Impact Assessment</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem", fontSize: "0.875rem" }}>
+                  <div>
+                    <span style={{ color: "#6b7280" }}>Expected Baseline Loss:</span>
+                    <strong style={{ display: "block" }}>₹{result.baseline_expected_rto_loss?.toFixed(2) || "0.00"}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: "#6b7280" }}>Net Loss Avoided:</span>
+                    <strong style={{ display: "block", color: result.net_impact > 0 ? "#10b981" : "#374151" }}>
+                      ₹{result.net_impact?.toFixed(2) || "0.00"}
+                    </strong>
+                  </div>
                 </div>
               </div>
             </>
