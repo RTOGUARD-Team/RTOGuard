@@ -1,0 +1,4 @@
+@tailwind base;@tailwind components;@tailwind utilities;
+body{@apply bg-bg text-t1 font-sans text-sm antialiased}
+:focus-visible{outline:2px solid #22D3EE;outline-offset:2px}
+@layer components{.btn{@apply inline-flex items-center gap-2 rounded-md border border-line bg-s2 px-3 py-1.5 hover:bg-s3 active:scale-[.98] transition disabled:opacity-50}.btn-p{@apply border-brand bg-brand font-semibold px-4 py-2 hover:bg-indigo-500}.field{@apply w-full rounded-md border border-line bg-s2 px-2.5 py-1.5}}
