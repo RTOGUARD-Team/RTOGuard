@@ -20,6 +20,31 @@ interface ValidationErrors {
   pincode?: string
 }
 
+const L = ({
+  t,
+  name,
+  hint,
+  errors,
+  children,
+}: {
+  t: string
+  name?: keyof ValidationErrors
+  hint?: string
+  errors?: ValidationErrors
+  children: React.ReactNode
+}) => (
+  <div>
+    <div className="mb-1 flex items-center justify-between">
+      <label className="block text-xs font-medium text-t2">{t}</label>
+      {hint && <span className="text-[11px] text-t3">{hint}</span>}
+    </div>
+    {children}
+    {name && errors && errors[name] && (
+      <p className="mt-1 text-xs font-medium text-hi animate-fade">{errors[name]}</p>
+    )}
+  </div>
+)
+
 export default function ScoreOrder() {
   const {demo} = useDemo()
   const [f, setF] = useState<any>(SCENARIOS[2].features)
@@ -155,28 +180,7 @@ export default function ScoreOrder() {
     }
   }
 
-  const L = ({
-    t,
-    name,
-    hint,
-    children,
-  }: {
-    t: string
-    name?: keyof ValidationErrors
-    hint?: string
-    children: React.ReactNode
-  }) => (
-    <div>
-      <div className="mb-1 flex items-center justify-between">
-        <label className="block text-xs font-medium text-t2">{t}</label>
-        {hint && <span className="text-[11px] text-t3">{hint}</span>}
-      </div>
-      {children}
-      {name && errors[name] && (
-        <p className="mt-1 text-xs font-medium text-hi animate-fade">{errors[name]}</p>
-      )}
-    </div>
-  )
+
 
   const isNew = f.customerType === 'NEW'
 
@@ -201,7 +205,7 @@ export default function ScoreOrder() {
           ))}
         </div>
         <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <L t="Customer type">
+          <L t="Customer type" errors={errors}>
             <select
               className="field"
               value={f.customerType}
@@ -212,7 +216,7 @@ export default function ScoreOrder() {
             </select>
           </L>
 
-          <L t="Past orders" name="pastOrders" hint={isNew ? '0 for new customer' : undefined}>
+          <L t="Past orders" name="pastOrders" hint={isNew ? '0 for new customer' : undefined} errors={errors}>
             <input
               className={`field transition-colors ${
                 errors.pastOrders ? 'border-hi focus:border-hi focus:ring-1 focus:ring-hi' : ''
@@ -226,7 +230,7 @@ export default function ScoreOrder() {
             />
           </L>
 
-          <L t="Past RTOs" name="pastRtos" hint={isNew ? '0 for new customer' : undefined}>
+          <L t="Past RTOs" name="pastRtos" hint={isNew ? '0 for new customer' : undefined} errors={errors}>
             <input
               className={`field transition-colors ${
                 errors.pastRtos ? 'border-hi focus:border-hi focus:ring-1 focus:ring-hi' : ''
@@ -240,7 +244,7 @@ export default function ScoreOrder() {
             />
           </L>
 
-          <L t="Order value (₹)" name="orderValue">
+          <L t="Order value (₹)" name="orderValue" errors={errors}>
             <input
               className={`field transition-colors ${
                 errors.orderValue ? 'border-hi focus:border-hi focus:ring-1 focus:ring-hi' : ''
@@ -253,7 +257,7 @@ export default function ScoreOrder() {
             />
           </L>
 
-          <L t="Payment mode">
+          <L t="Payment mode" errors={errors}>
             <select
               className="field"
               value={f.paymentMode}
@@ -264,7 +268,7 @@ export default function ScoreOrder() {
             </select>
           </L>
 
-          <L t="Pincode (6 digits)" name="pincode">
+          <L t="Pincode (6 digits)" name="pincode" errors={errors}>
             <input
               className={`field transition-colors ${
                 errors.pincode ? 'border-hi focus:border-hi focus:ring-1 focus:ring-hi' : ''
