@@ -1,2 +1,0 @@
-export default function MetricCard({label,value,delta,hint,tone='text-t1',large}:{label:string;value:string;delta?:string;hint?:string;tone?:string;large?:boolean}){
- return<div className="border-line px-5 py-[18px] [&:not(:last-child)]:border-r"><div className={tone==='text-lo'?tone:'text-t2'}>{label}</div><div className={`mt-1.5 font-semibold tracking-tight ${large?'text-[34px]':'text-[26px]'} ${tone}`}>{value}</div>{delta&&<div className={`text-xs font-semibold ${tone==='text-lo'?tone:'text-hi'}`}>{delta}</div>}{hint&&<div className="text-xs text-t3">{hint}</div>}</div>}
