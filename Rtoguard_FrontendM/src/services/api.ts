@@ -71,8 +71,17 @@ export const getRecommendation=async(id:string)=>(await getScored(id)).recommend
 export const getRiskAssessment=async(id:string):Promise<RiskAssessment>=>{const s=await getScored(id);return{orderId:id,riskScore:s.order.riskScore,riskLevel:s.order.riskLevel,factors:s.order.factors,modelNote:s.modelNote}}
 /** Live: POST /rto/score-features (backend computes score, factors, action, economics and stores the order). Demo: replays the saved scenario with identical features. */
 export const scoreOrder=async(i:ScoreFeatures):Promise<Scored>=>{
- if(demo){await wait(300);const s=SCENARIOS.find(x=>JSON.stringify(x.features)===JSON.stringify(i));if(!s)throw new ApiError('unsupported','Demo Mode only scores the five saved scenarios (use the presets). Turn Demo Mode off to score custom orders on the backend.');return getScored(s.orderId)}
- return toScored(await http<RawScored>('/rto/score-features',{customer_type:i.customerType,past_orders:i.pastOrders,past_rtos:i.pastRtos,order_value:i.orderValue,payment_mode:i.paymentMode,pincode:i.pincode,festive_window:i.festiveWindow}))}
+ try{
+  return toScored(await http<RawScored>('/rto/score-features',{customer_type:i.customerType,past_orders:i.pastOrders,past_rtos:i.pastRtos,order_value:i.orderValue,payment_mode:i.paymentMode,pincode:i.pincode,festive_window:i.festiveWindow}))
+ }catch(err){
+  if(demo){
+   await wait(300);
+   const s=SCENARIOS.find(x=>JSON.stringify(x.features)===JSON.stringify(i));
+   if(!s)throw new ApiError('unsupported','Cannot reach backend to score custom order, and Demo Mode only has 5 saved scenarios.');
+   return getScored(s.orderId);
+  }
+  throw err;
+ }}
 
 /* ---------- operator decision + outcome ---------- */
 export const getOperatorStates=async():Promise<Record<string,OperatorState>>=>demo?load():Object.fromEntries((await http<RawScored[]>('/rto/orders')).map(r=>[r.order_id,toState(r)]))

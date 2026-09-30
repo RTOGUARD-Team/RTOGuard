@@ -78,7 +78,10 @@ export default function ScoreOrder() {
   }
 
   const set = (k: string, v: any) => {
-    const next = {...f, [k]: v}
+    let next = {...f, [k]: v}
+    if ((k === 'pastOrders' || k === 'pastRtos') && Number(v) > 0) {
+      next.customerType = 'RETURNING'
+    }
     setF(next)
     // Clear or update field-specific error as user types
     const fieldErr = validateField(k, v, next)
@@ -136,11 +139,14 @@ export default function ScoreOrder() {
     setBusy(true)
     setErr(undefined)
     try {
+      const numOrders = Number(f.pastOrders) || 0
+      const numRtos = Number(f.pastRtos) || 0
+      const isRet = numOrders > 0 || numRtos > 0 || f.customerType === 'RETURNING'
       const payload: ScoreFeatures = {
         ...f,
-        customerType: f.customerType,
-        pastOrders: f.customerType === 'NEW' ? 0 : Number(f.pastOrders) || 0,
-        pastRtos: f.customerType === 'NEW' ? 0 : Number(f.pastRtos) || 0,
+        customerType: isRet ? 'RETURNING' : 'NEW',
+        pastOrders: isRet ? numOrders : 0,
+        pastRtos: isRet ? numRtos : 0,
         orderValue: Number(f.orderValue) || 0,
         pincode: String(f.pincode).trim(),
       }
@@ -212,16 +218,15 @@ export default function ScoreOrder() {
             </select>
           </L>
 
-          <L t="Past orders" name="pastOrders" hint={isNew ? '0 for new customer' : undefined}>
+          <L t="Past orders" name="pastOrders" hint={isNew ? 'Enter > 0 for repeat history' : undefined}>
             <input
               className={`field transition-colors ${
                 errors.pastOrders ? 'border-hi focus:border-hi focus:ring-1 focus:ring-hi' : ''
-              } ${isNew ? 'cursor-not-allowed opacity-50 bg-s1' : ''}`}
+              }`}
               type="text"
               inputMode="numeric"
               placeholder={isNew ? '0' : '1'}
-              disabled={isNew}
-              value={isNew ? 0 : f.pastOrders ?? ''}
+              value={f.pastOrders ?? ''}
               onChange={e => set('pastOrders', e.target.value.replace(/\D/g, ''))}
             />
           </L>
@@ -230,12 +235,11 @@ export default function ScoreOrder() {
             <input
               className={`field transition-colors ${
                 errors.pastRtos ? 'border-hi focus:border-hi focus:ring-1 focus:ring-hi' : ''
-              } ${isNew ? 'cursor-not-allowed opacity-50 bg-s1' : ''}`}
+              }`}
               type="text"
               inputMode="numeric"
               placeholder="0"
-              disabled={isNew}
-              value={isNew ? 0 : f.pastRtos ?? ''}
+              value={f.pastRtos ?? ''}
               onChange={e => set('pastRtos', e.target.value.replace(/\D/g, ''))}
             />
           </L>

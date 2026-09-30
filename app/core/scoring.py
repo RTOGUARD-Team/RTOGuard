@@ -129,12 +129,14 @@ def score_order(order: Union[Dict[str, Any], Any]) -> Dict[str, Any]:
         rto_rate = float(od.get("past_rto_rate", od.get("historical_rto_rate", (past_rtos / max(past_orders, 1)) if past_orders else 0.0)))
 
         raw_cust_type = str(od.get("customer_type", "")).upper()
-        if raw_cust_type in ("OLD", "RETURNING"):
+        if past_orders > 0 or past_rtos > 0:
+            is_old_customer = True
+        elif raw_cust_type in ("OLD", "RETURNING"):
             is_old_customer = True
         elif raw_cust_type == "NEW":
             is_old_customer = False
         else:
-            is_old_customer = past_orders > 0
+            is_old_customer = False
 
         customer_info = {
             "past_orders_count": past_orders,

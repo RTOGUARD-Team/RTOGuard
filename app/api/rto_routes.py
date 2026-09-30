@@ -812,11 +812,20 @@ def score_features_endpoint(req: ScoreFeaturesRequest):
         prediction_doc["payment_mode"] = req.payment_mode
         prediction_doc["order_value"] = req.order_value
 
+        import hashlib, re
+        cid_str = getattr(req, "customer_id", None) or order_id
+        if not re.match(r"^[a-f0-9]{64}$", str(cid_str)):
+            cid_hash = hashlib.sha256(str(cid_str).encode()).hexdigest()
+        else:
+            cid_hash = str(cid_str)
+
+        prediction_doc["customer_id"] = cid_hash
+
         _save_to_db(
             order_dict=order_dict,
             prediction_doc=prediction_doc,
             customer_status="new" if req.customer_type == "NEW" else "returning",
-            customer_id=order_id,
+            customer_id=cid_hash,
         )
 
         return {
