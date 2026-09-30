@@ -1,0 +1,4 @@
+import {Link} from 'react-router-dom'
+export const LoadingState=({rows=5}:{rows?:number})=><div className="space-y-3 p-2" role="status" aria-label="Loading">{Array.from({length:rows},(_,i)=><div key={i} className="h-4 animate-pulse rounded bg-s2"/>)}</div>
+export const EmptyState=({title,message}:{title:string;message?:string})=><div className="px-5 py-10 text-center text-t2"><b className="block text-t1">{title}</b>{message}</div>
+export const ErrorState=({title='Could not load data',message,onRetry}:{title?:string;message?:string;onRetry?:()=>void})=><div className="rounded-lg border border-line bg-s1 px-5 py-10 text-center text-t2"><b className="block text-t1">{title}</b>{message}<div className="mt-4 flex justify-center gap-2">{onRetry&&<button className="btn" onClick={onRetry}>Try again</button>}<Link className="btn" to="/dashboard">Back to dashboard</Link></div></div>
