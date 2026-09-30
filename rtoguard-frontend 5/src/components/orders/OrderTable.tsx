@@ -1,0 +1,16 @@
+import {useMemo,useState} from 'react'
+import {Link} from 'react-router-dom'
+import type {OperatorState,Order,RiskLevel} from '../../types'
+import {ACTION_LABEL,humanize,inr,pct} from '../../lib/format'
+import RiskBadge from '../common/RiskBadge'
+import {EmptyState} from '../common/States'
+type Key='id'|'customer'|'value'|'riskScore'|'expectedLoss'
+const COLS:[Key|null,string][]=[['id','Order ID'],['customer','Customer'],['value','Order Value'],['riskScore','RTO Risk'],[null,'Risk Level'],[null,'Top Factor'],[null,'Recommendation'],['expectedLoss','Expected Loss'],[null,'Decision Status'],[null,'Outcome'],[null,'']]
+const status=(s?:OperatorState)=>s?.decision?(s.decision.operatorAction==='ACCEPT'?'ACCEPTED':'OVERRIDDEN'):'PENDING_REVIEW'
+const outcome=(s?:OperatorState)=>s?.outcome?`OUTCOME_RECORDED · ${s.outcome.actualOutcome}`:s?.decision?'OUTCOME_PENDING':'—'
+export default function OrderTable({orders,states={},initialQuery='',limit=200}:{orders:Order[];states?:Record<string,OperatorState>;initialQuery?:string;limit?:number}){
+ const[q,setQ]=useState(initialQuery),[lv,setLv]=useState<'ALL'|RiskLevel>('ALL'),[k,setK]=useState<Key>('riskScore'),[d,setD]=useState(-1)
+ const rows=useMemo(()=>orders.filter(o=>(lv==='ALL'||o.riskLevel===lv)&&(o.id+o.customer).toLowerCase().includes(q.toLowerCase())).sort((a,b)=>(a[k]>b[k]?1:-1)*d),[orders,q,lv,k,d])
+ return<div><div className="mb-3 flex flex-wrap gap-2.5"><input className="field w-64" placeholder="Search orders or customers" value={q} onChange={e=>setQ(e.target.value)} aria-label="Search orders"/><select className="field w-auto" value={lv} onChange={e=>setLv(e.target.value as 'ALL'|RiskLevel)} aria-label="Risk level"><option value="ALL">All risk levels</option><option>HIGH</option><option>MEDIUM</option><option>LOW</option></select></div>
+ {rows.length===0?<EmptyState title="No orders match" message="Clear the search or risk filter to see all orders."/>:<div className="overflow-x-auto"><table className="w-full"><thead><tr>{COLS.map(([key,l])=><th key={l} onClick={()=>key&&(setD(k===key?-d:-1),setK(key))} className={`whitespace-nowrap border-b border-line px-2.5 py-2 text-left text-xs font-medium text-t3 ${key?'cursor-pointer hover:text-t1':''}`}>{l}{k===key&&(d>0?' ↑':' ↓')}</th>)}</tr></thead>
+ <tbody>{rows.slice(0,limit).map(o=>{const s=states[o.id];return<tr key={o.id} className="group">{[<b key="i">{o.id}</b>,o.customer,inr(o.value),pct(o.riskScore),<RiskBadge key="b" level={o.riskLevel}/>,<span key="f" className="text-t2">{o.factors[0]?.name??(o.topFactors[0]?humanize(o.topFactors[0]):'—')}</span>,ACTION_LABEL[o.recommendedAction],inr(o.expectedLoss),<span key="s" className={s?.decision?'text-lo':'text-me'}>{status(s)}</span>,<span key="a" className={s?.outcome?.actualOutcome==='RTO'?'text-hi':'text-t2'}>{outcome(s)}</span>,<Link key="v" className="btn" to={`/orders/${o.id}`}>Review</Link>].map((c,i)=><td key={i} className="whitespace-nowrap border-b border-line px-2.5 py-[11px] tabular-nums group-hover:bg-s2 group-last:border-0">{c}</td>)}</tr>})}</tbody></table>{rows.length>limit&&<p className="pt-3 text-xs text-t3">Showing {limit} of {rows.length}. Use search or filters to narrow down.</p>}</div>}</div>}
