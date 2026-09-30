@@ -28,6 +28,30 @@ export async function scoreOrder(orderData) {
 }
 
 /**
+ * Fetch evaluated orders directly from MongoDB
+ * @returns {Promise<Array>} Array of evaluated order objects with prediction details
+ */
+export async function getEvaluatedOrders(limit = 50) {
+  const response = await fetch(`${API_BASE_URL}/rto/evaluated-orders?limit=${limit}`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch orders: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Fetch live aggregate KPI metrics from MongoDB
+ * @returns {Promise<Object>} Aggregate stats (total_orders, high_risk_orders, etc.)
+ */
+export async function getDashboardSummary() {
+  const response = await fetch(`${API_BASE_URL}/rto/dashboard-summary`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch dashboard summary: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
  * Health check to verify FastAPI and MongoDB connectivity
  */
 export async function checkHealth() {
