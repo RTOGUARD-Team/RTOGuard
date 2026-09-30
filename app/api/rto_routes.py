@@ -474,3 +474,118 @@ def simulate_with_scoring(
             status_code=400,
             detail=str(error)
         )
+
+
+# =====================================================
+# 7. LIVE EVALUATED ORDERS FROM DB
+# =====================================================
+
+@router.get("/evaluated-orders")
+def get_evaluated_orders(limit: int = 50):
+    """
+    Fetch evaluated orders merged with their predictions from MongoDB.
+    Used by Frontend Dashboard, Orders Feed, and OrderDrawer.
+    """
+    try:
+        from app.db import orders_collection, predictions_collection
+
+        # Fetch recent predictions sorted by newest first
+        predictions = list(predictions_collection.find().sort("_id", -1).limit(limit))
+
+        evaluated_list = []
+        for pred in predictions:
+            order_id = pred.get("order_id")
+            order_doc = orders_collection.find_one({"order_id": order_id}) or {}
+
+            # Map to frontend UI schema
+            risk_score = float(pred.get("risk_score", 0.0))
+            if risk_score > 0.65:
+                risk_level = "High"
+            elif risk_score >= 0.35:
+                risk_level = "Medium"
+            else:
+                risk_level = "Low"
+
+            # Parse reasons / top_factors
+            reasons_raw = pred.get("reason", "")
+            reasons = [r.strip() for r in reasons_raw.split(";") if r.strip()]
+
+            order_val = float(order_doc.get("order_value", 1500.0))
+
+            evaluated_list.append({
+                "order_id": order_id or f"ORD-{str(pred['_id'])[-6:]}",
+                "customer_id": str(pred.get("customer_id") or order_doc.get("customer_id") or "CUS-1001"),
+                "order_value": order_val,
+                "payment_mode": str(order_doc.get("payment_mode", "COD")).upper(),
+                "pincode": str(order_doc.get("pincode", "110001")),
+                "category": str(order_doc.get("category", "General")).title(),
+                "risk_score": risk_score,
+                "risk_level": risk_level,
+                "reasons": reasons if reasons else ["Low Historical RTO Risk"],
+                "recommended_action": pred.get("action", "SHIP_NORMAL"),
+                "expected_loss_prevented": round(order_val * risk_score * 0.35, 2),
+                "scored_at": pred.get("scored_at").isoformat() if hasattr(pred.get("scored_at"), "isoformat") else str(pred.get("scored_at") or ""),
+            })
+
+        return evaluated_list
+
+    except Exception as e:
+        _db_log.error("Failed to fetch evaluated orders: %s", e)
+        return []
+
+
+# =====================================================
+# 8. LIVE DASHBOARD KPI SUMMARY
+# =====================================================
+
+@router.get("/dashboard-summary")
+def get_dashboard_summary():
+    """
+    Computes real-time KPI metrics from MongoDB predictions and orders.
+    """
+    try:
+        from app.db import predictions_collection, orders_collection
+
+        total_orders = predictions_collection.count_documents({})
+        if total_orders == 0:
+            return {
+                "total_orders": 0,
+                "high_risk_orders": 0,
+                "rto_risk_percentage": "0.0",
+                "total_order_value": 0.0,
+                "expected_loss_prevented": 0.0,
+            }
+
+        preds = list(predictions_collection.find())
+        high_risk_count = 0
+        total_value = 0.0
+        total_loss_prevented = 0.0
+
+        for p in preds:
+            score = float(p.get("risk_score", 0.0))
+            if score > 0.65:
+                high_risk_count += 1
+
+            # Fetch matching order value
+            o = orders_collection.find_one({"order_id": p.get("order_id")}) or {}
+            val = float(o.get("order_value", 1500.0))
+            total_value += val
+            total_loss_prevented += round(val * score * 0.35, 2)
+
+        return {
+            "total_orders": total_orders,
+            "high_risk_orders": high_risk_count,
+            "rto_risk_percentage": f"{(high_risk_count / total_orders * 100):.1f}",
+            "total_order_value": round(total_value, 2),
+            "expected_loss_prevented": round(total_loss_prevented, 2),
+        }
+
+    except Exception as e:
+        _db_log.error("Failed to calculate dashboard summary: %s", e)
+        return {
+            "total_orders": 0,
+            "high_risk_orders": 0,
+            "rto_risk_percentage": "0.0",
+            "total_order_value": 0.0,
+            "expected_loss_prevented": 0.0,
+        }
