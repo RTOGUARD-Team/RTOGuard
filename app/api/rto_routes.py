@@ -5,7 +5,8 @@ from app.rto_schemas import (
     CostRequest,
     SimulationRequest,
     RawSimulationRequest,
-    RawOrder
+    RawOrder,
+    OrderOutcomeRequest
 )
 
 from app.core.scoring import score_order as ml_score_order
@@ -36,12 +37,11 @@ def _save_to_db(
     customer_id,
 ) -> None:
     """
-    Saves 3 things to MongoDB after every scoring request:
+    Saves and updates MongoDB after every scoring request:
       1. predictions  -- full ML result + action (audit trail)
       2. orders       -- raw incoming order (order log)
-      3. customers    -- upserts new customer with cold-start profile
-                        so they appear as known on next order
-    Errors are logged but never crash the API response.
+      3. customers    -- IF NEW: registers them with initial profile
+                      -- IF RETURNING: increments past_orders_count & orders_last_90d
     """
     try:
         from app.db import predictions_collection, orders_collection, customers_collection
@@ -54,6 +54,7 @@ def _save_to_db(
         # 2. Save the raw order
         order_doc = dict(order_dict)
         order_doc["scored_at"] = datetime.now(timezone.utc)
+        order_doc["status"] = "PENDING_DISPATCH"
         orders_collection.update_one(
             {"order_id": order_doc.get("order_id")},
             {"$set": order_doc},
@@ -61,7 +62,10 @@ def _save_to_db(
         )
         _db_log.info("Order saved: %s", order_doc.get("order_id"))
 
-        # 3. If NEW customer, register them so next order uses real profile
+        # 3. Update customer history in database
+        is_cod = order_dict.get("payment_mode", "").upper() == "COD"
+        order_val = float(order_dict.get("order_value", 0))
+
         if customer_status == "new":
             new_customer_doc = {
                 "customer_id"            : customer_id,
@@ -73,10 +77,10 @@ def _save_to_db(
                 "tenure_months"          : 0,
                 "orders_per_month"       : 0.0,
                 "orders_last_90d"        : 1,
-                "prev_cod_orders"        : 1 if order_dict.get("payment_mode", "").upper() == "COD" else 0,
+                "prev_cod_orders"        : 1 if is_cod else 0,
                 "prev_cod_success_rate"  : 0.0,
-                "cod_share_history"      : 1.0 if order_dict.get("payment_mode", "").upper() == "COD" else 0.0,
-                "avg_order_value"        : float(order_dict.get("order_value", 0)),
+                "cod_share_history"      : 1.0 if is_cod else 0.0,
+                "avg_order_value"        : order_val,
                 "registered_at"          : datetime.now(timezone.utc),
             }
             customers_collection.update_one(
@@ -85,9 +89,31 @@ def _save_to_db(
                 upsert=True,
             )
             _db_log.info("New customer %s registered in DB", customer_id)
+        else:
+            # RETURNING CUSTOMER: increment their order counts
+            # Query candidate ID variants (int or str)
+            cand_query = {"$or": [{"customer_id": customer_id}]}
+            try:
+                cand_query["$or"].append({"customer_id": int(customer_id)})
+            except (ValueError, TypeError):
+                pass
+            cand_query["$or"].append({"customer_id": str(customer_id)})
+
+            update_ops = {
+                "$inc": {
+                    "past_orders_count": 1,
+                    "orders_last_90d": 1,
+                }
+            }
+            if is_cod:
+                update_ops["$inc"]["prev_cod_orders"] = 1
+
+            customers_collection.update_one(cand_query, update_ops)
+            _db_log.info("Incremented order history for returning customer %s", customer_id)
 
     except Exception as e:
         _db_log.error("DB save failed (non-critical): %s", e)
+
 
 
 
@@ -588,4 +614,102 @@ def get_dashboard_summary():
             "rto_risk_percentage": "0.0",
             "total_order_value": 0.0,
             "expected_loss_prevented": 0.0,
-        }
+        }
+
+
+# =====================================================
+# 9. ORDER OUTCOME FEEDBACK LOOP (Post-Delivery Status)
+# =====================================================
+
+@router.post("/order-outcome")
+def record_order_outcome(request: OrderOutcomeRequest):
+    """
+    Closes the real-world feedback loop when a courier delivers or returns an order:
+    1. Updates the order status in `orders_collection` ('DELIVERED' or 'RTO' / 'RETURNED').
+    2. Updates the customer's behavioral record in `customers_collection`:
+       - If RTO / RETURNED: increments `past_rto_orders` += 1.
+       - Recomputes new `past_rto_rate` = past_rto_orders / past_orders_count.
+    """
+    try:
+        from app.db import orders_collection, customers_collection
+        from datetime import datetime, timezone
+
+        norm_status = request.status.strip().upper()
+        if norm_status not in ["DELIVERED", "RTO", "RETURNED", "CANCELLED"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Status must be one of: 'DELIVERED', 'RTO', 'RETURNED', 'CANCELLED'"
+            )
+
+        # 1. Find and update the order
+        order = orders_collection.find_one({"order_id": request.order_id})
+        if not order:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Order {request.order_id} not found in database."
+            )
+
+        orders_collection.update_one(
+            {"order_id": request.order_id},
+            {
+                "$set": {
+                    "delivery_status": norm_status,
+                    "outcome_recorded_at": datetime.now(timezone.utc),
+                    "notes": request.notes,
+                }
+            }
+        )
+
+        # 2. Update customer RTO profile
+        customer_id = order.get("customer_id")
+        customer_updated = False
+        new_rto_rate = 0.0
+
+        if customer_id is not None:
+            cand_query = {"$or": [{"customer_id": customer_id}]}
+            try:
+                cand_query["$or"].append({"customer_id": int(customer_id)})
+            except (ValueError, TypeError):
+                pass
+            cand_query["$or"].append({"customer_id": str(customer_id)})
+
+            cust_doc = customers_collection.find_one(cand_query)
+
+            if cust_doc:
+                is_rto = norm_status in ["RTO", "RETURNED"]
+                past_orders = max(int(cust_doc.get("past_orders_count", 1)), 1)
+                past_rto = int(cust_doc.get("past_rto_orders", 0))
+
+                if is_rto:
+                    past_rto += 1
+
+                new_rto_rate = round(past_rto / past_orders, 4)
+
+                update_dict = {
+                    "$set": {
+                        "past_rto_orders": past_rto,
+                        "past_rto_rate": new_rto_rate,
+                    }
+                }
+                customers_collection.update_one(cand_query, update_dict)
+                customer_updated = True
+                _db_log.info(
+                    "Customer %s updated: past_rto_orders=%d, new_rto_rate=%.4f",
+                    customer_id, past_rto, new_rto_rate
+                )
+
+        return {
+            "order_id": request.order_id,
+            "status": norm_status,
+            "customer_id": customer_id,
+            "customer_profile_updated": customer_updated,
+            "new_rto_rate": new_rto_rate,
+            "message": f"Order {request.order_id} marked as {norm_status}. Customer history updated."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        _db_log.error("Failed to record order outcome: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
