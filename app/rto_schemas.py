@@ -145,4 +145,30 @@ class OrderOutcomeRequest(BaseModel):
         ...,
         description="Delivery outcome: 'DELIVERED' or 'RTO' / 'RETURNED'"
     )
-    notes: str = ""
+    notes: str = ""
+
+
+# =====================================================
+# SCORE FEATURES REQUEST (from ScoreOrder.tsx)
+# =====================================================
+
+class ScoreFeaturesRequest(BaseModel):
+    customer_type: str = "NEW"
+    past_orders: int = 0
+    past_rtos: int = 0
+    order_value: float = Field(..., gt=0)
+    payment_mode: str = "COD"
+    pincode: str = "110001"
+    festive_window: bool = False
+
+
+# =====================================================
+# OPERATOR DECISION REQUEST (from DecisionPanel.tsx)
+# =====================================================
+
+class OperatorDecisionRequest(BaseModel):
+    operator_action: str = Field(..., description="'ACCEPT' or 'OVERRIDE'")
+    override_action: str | None = None
+    override_reason: str | None = None
+    override_note: str | None = None
+

@@ -10,9 +10,10 @@ import type {RawDecisionRecord,RawEval,RawMetrics,RawOrder,RawScored,RawSim} fro
 import {DEMO,SCENARIOS} from '../data/demo'
 import {humanize} from '../lib/format'
 const BASE=(import.meta.env?.VITE_API_BASE_URL as string|undefined)??''
-let demo=true
+let demo=false
 export const setDemoMode=(v:boolean)=>{demo=v}
 export const persistenceNote=()=>demo?'Demo Mode: saved in this browser only.':'Saved to the RTOGuard backend database.'
+
 const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms))
 
 export class ApiError extends Error{constructor(public kind:'validation'|'server'|'network'|'unsupported'|'malformed'|'notfound',message:string){super(message)}}
@@ -29,7 +30,22 @@ async function http<T>(path:string,body?:unknown):Promise<T>{
 /* ---------- mappers ---------- */
 const toRec=(r:RawScored):Recommendation=>({orderId:r.order_id,riskScore:r.risk_score,riskLevel:r.risk_level,action:r.recommended_action,rationale:r.reason,suggestedDeposit:r.suggested_deposit,topFactors:r.top_factors,probBefore:r.baseline_rto_probability,probAfter:r.intervention_rto_probability,lossBefore:r.baseline_expected_rto_loss,lossAfter:r.intervention_expected_rto_loss,rtoLossAvoided:r.rto_loss_avoided,interventionCost:r.intervention_cost,conversionLoss:r.conversion_loss_impact,netImpact:r.net_impact})
 const toFactors=(r:RawScored):RiskFactor[]=>r.factor_contributions?.length?r.factor_contributions.map(c=>({key:c.factor,name:c.label,contribution:c.contribution})):r.top_factors.map(k=>({key:k,name:humanize(k)}))
-const toOrder=(r:RawScored,m?:{customer:string;location:string;date:string}):Order=>({id:r.order_id,customer:m?.customer??'—',location:m?.location??'—',date:m?.date??(r.created_at?.slice(0,10)??'—'),customerType:r.features?(r.features.customer_type==='NEW'?'New':'Returning'):'Unknown',value:r.order_value,payment:r.payment_mode.toUpperCase()==='COD'?'COD':'Prepaid',riskScore:r.risk_score,riskLevel:r.risk_level,recommendedAction:r.recommended_action,expectedLoss:r.baseline_expected_rto_loss,topFactors:r.top_factors,factors:toFactors(r)})
+const toOrder=(r:RawScored,m?:{customer:string;location:string;date:string}):Order=>({
+ id:r.order_id,
+ customer:m?.customer??(r as any).customer??'Customer',
+ location:m?.location??(r as any).location??'India',
+ date:m?.date??(r.created_at?.slice(0,10)??'Today'),
+ customerType:r.features?(r.features.customer_type==='NEW'?'New':'Returning'):'Unknown',
+ value:r.order_value,
+ payment:r.payment_mode.toUpperCase()==='COD'?'COD':'Prepaid',
+ riskScore:r.risk_score,
+ riskLevel:r.risk_level,
+ recommendedAction:r.recommended_action,
+ expectedLoss:r.baseline_expected_rto_loss,
+ topFactors:r.top_factors,
+ factors:toFactors(r)
+})
+
 const toDecision=(id:string,d:RawDecisionRecord):DecisionEvent=>({orderId:id,originalRiskScore:d.original_risk_score,originalAction:d.original_recommended_action,operatorAction:d.operator_action,overrideAction:d.override_action??undefined,overrideReason:(d.override_reason??undefined) as DecisionEvent['overrideReason'],overrideNote:d.override_note??undefined,at:d.decided_at})
 const toState=(r:RawScored):OperatorState=>({decision:r.decision?toDecision(r.order_id,r.decision):undefined,outcome:r.outcome&&r.outcome.actual_outcome!=='PENDING'?{orderId:r.order_id,actualOutcome:r.outcome.actual_outcome,outcomeDate:r.outcome.outcome_date??undefined}:undefined})
 const toScored=(r:RawScored,m?:Parameters<typeof toOrder>[1]):Scored=>({order:toOrder(r,m),recommendation:toRec(r),modelNote:r.model_note??'Heuristic risk score — not externally calibrated'})
@@ -76,9 +92,39 @@ export const runSimulation=async(i:SimulationInput={orderCount:1000,seed:42,fest
  const p=http<RawSim>('/rto/simulate',{order_count:i.orderCount,seed:i.seed,festive:i.festive}).then(toSim);cache.set(k,p);p.catch(()=>cache.delete(k));return p}
 export const getAssumptions=async(orderCount=1000):Promise<AssumptionItem[]>=>demo?DEMO.assumptions.items:(await http<{items:AssumptionItem[]}>(`/rto/assumptions?order_count=${orderCount}`)).items
 const share=(o:Order[],l:RiskLevel,f:(x:Order)=>number)=>{const t=o.reduce((s,x)=>s+f(x),0)||1;return Math.round(o.filter(x=>x.riskLevel===l).reduce((s,x)=>s+f(x),0)/t*100)}
-export const getDashboardMetrics=async():Promise<DashboardMetrics>=>{const b=await runSimulation(),o=b.orders
- return{orderCount:b.orderCount,rtoRate:b.baseline.rate*100,expectedLoss:b.baseline.loss,highRiskOrders:o.filter(x=>x.riskLevel==='HIGH').length,netImpact:b.impact.netImpact,distribution:(['LOW','MEDIUM','HIGH'] as RiskLevel[]).map(level=>({level,orders:share(o,level,()=>1),loss:share(o,level,x=>x.expectedLoss)}))}}
-export const getAnalytics=async():Promise<AnalyticsData>=>{const b=await runSimulation(),o=b.orders,avg=(p:string)=>{const g=o.filter(x=>x.payment===p);return g.length?g.reduce((s,x)=>s+x.riskScore,0)/g.length*100:0}
- return{rateByPayment:[{label:'COD',value:avg('COD')},{label:'Prepaid',value:avg('Prepaid')}],actions:Object.entries(b.rtoguard.actionCounts).map(([label,value])=>({label,value})),lossByLevel:(['HIGH','MEDIUM','LOW'] as RiskLevel[]).map(l=>({label:l,value:o.filter(x=>x.riskLevel===l).reduce((s,x)=>s+x.expectedLoss,0)}))}}
+export const getDashboardMetrics=async():Promise<DashboardMetrics>=>{
+ if(demo){const b=await runSimulation(),o=b.orders;return{orderCount:b.orderCount,rtoRate:b.baseline.rate*100,expectedLoss:b.baseline.loss,highRiskOrders:o.filter(x=>x.riskLevel==='HIGH').length,netImpact:b.impact.netImpact,distribution:(['LOW','MEDIUM','HIGH'] as RiskLevel[]).map(level=>({level,orders:share(o,level,()=>1),loss:share(o,level,x=>x.expectedLoss)}))}}
+ const o=await getOrders()
+ const totalOrders=o.length||1
+ const totalLoss=o.reduce((s,x)=>s+(x.expectedLoss||0),0)
+ const highOrders=o.filter(x=>x.riskLevel==='HIGH').length
+ const avgRisk=o.reduce((s,x)=>s+(x.riskScore||0),0)/totalOrders*100
+ const netAvoided=o.reduce((s,x)=>(x.expectedLoss?s+x.expectedLoss*0.45:s),0)
+ return{
+  orderCount:o.length,
+  rtoRate:avgRisk,
+  expectedLoss:totalLoss,
+  highRiskOrders:highOrders,
+  netImpact:netAvoided,
+  distribution:(['LOW','MEDIUM','HIGH'] as RiskLevel[]).map(level=>({
+   level,
+   orders:share(o,level,()=>1),
+   loss:share(o,level,x=>x.expectedLoss||0)
+  }))
+ }
+}
+export const getAnalytics=async():Promise<AnalyticsData>=>{
+ if(demo){const b=await runSimulation(),o=b.orders,avg=(p:string)=>{const g=o.filter(x=>x.payment===p);return g.length?g.reduce((s,x)=>s+x.riskScore,0)/g.length*100:0};return{rateByPayment:[{label:'COD',value:avg('COD')},{label:'Prepaid',value:avg('Prepaid')}],actions:Object.entries(b.rtoguard.actionCounts).map(([label,value])=>({label,value})),lossByLevel:(['HIGH','MEDIUM','LOW'] as RiskLevel[]).map(l=>({label:l,value:o.filter(x=>x.riskLevel===l).reduce((s,x)=>s+x.expectedLoss,0)}))}}
+ const o=await getOrders()
+ const avg=(p:string)=>{const g=o.filter(x=>x.payment===p);return g.length?g.reduce((s,x)=>s+x.riskScore,0)/g.length*100:0}
+ const actCounts:Record<string,number>={}
+ o.forEach(x=>{actCounts[x.recommendedAction]=(actCounts[x.recommendedAction]||0)+1})
+ return{
+  rateByPayment:[{label:'COD',value:avg('COD')},{label:'Prepaid',value:avg('Prepaid')}],
+  actions:Object.entries(actCounts).map(([label,value])=>({label,value})),
+  lossByLevel:(['HIGH','MEDIUM','LOW'] as RiskLevel[]).map(l=>({label:l,value:o.filter(x=>x.riskLevel===l).reduce((s,x)=>s+(x.expectedLoss||0),0)}))
+ }
+}
+
 export const getEvaluation=async():Promise<Evaluation>=>{const r=demo?DEMO.evaluation:await http<RawEval>('/rto/evaluation')
  return{synthetic:toMetrics(r.synthetic_outcomes),operator:toMetrics(r.operator_outcomes),decisions:r.operational.decisions,overrideRate:r.operational.override_rate,queueVolume:r.operational.confirmation_queue_volume,avgLatencySec:r.operational.avg_decision_latency_seconds,note:r.note}}
