@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+import re
+from pydantic import BaseModel, field_validator
 
 
 class OrderRequest(BaseModel):
@@ -8,6 +9,14 @@ class OrderRequest(BaseModel):
     pincode: str
     category: str
     is_festive_window: bool
+
+    @field_validator("pincode")
+    @classmethod
+    def validate_pincode(cls, v: str) -> str:
+        v_clean = str(v).strip()
+        if not re.match(r"^[1-9][0-9]{5}$", v_clean):
+            raise ValueError("pincode must be a valid 6-digit Indian postal PIN code.")
+        return v_clean
 
 
 class ScoreResponse(BaseModel):

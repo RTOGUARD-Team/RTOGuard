@@ -1,4 +1,5 @@
 import re
+from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -75,6 +76,8 @@ class SimulationOrder(BaseModel):
         default_factory=list
     )
 
+    outcome: str = "DELIVERED"
+
 
 # =====================================================
 # SIMULATION REQUEST
@@ -91,6 +94,8 @@ class SimulationRequest(BaseModel):
     )
 
     seed: int = 42
+
+    festive: bool = False
 
 
 # =====================================================
@@ -119,11 +124,21 @@ class RawOrder(BaseModel):
 
     is_festive_window: bool = False
 
+    outcome: str = "DELIVERED"
+
     @field_validator("customer_id", mode="before")
     @classmethod
     def coerce_customer_id(cls, v) -> str:
         """Accept int or string customer IDs — convert all to string for storage."""
         return str(v).strip()
+
+    @field_validator("pincode")
+    @classmethod
+    def validate_pincode(cls, v: str) -> str:
+        v_clean = str(v).strip()
+        if not re.match(r"^[1-9][0-9]{5}$", v_clean):
+            raise ValueError("pincode must be a valid 6-digit Indian postal PIN code.")
+        return v_clean
 
 
 # =====================================================
@@ -161,13 +176,24 @@ class ScoreFeaturesRequest(BaseModel):
     pincode: str = "110001"
     festive_window: bool = False
 
+    @field_validator("pincode")
+    @classmethod
+    def validate_pincode(cls, v: str) -> str:
+        v_clean = str(v).strip()
+        if not re.match(r"^[1-9][0-9]{5}$", v_clean):
+            raise ValueError("pincode must be a valid 6-digit Indian postal PIN code.")
+        return v_clean
+
 
 # =====================================================
 # OPERATOR DECISION REQUEST (from DecisionPanel.tsx)
 # =====================================================
 
 class OperatorDecisionRequest(BaseModel):
-    operator_action: str = Field(..., description="'ACCEPT' or 'OVERRIDE'")
+    operator_action: Literal["ACCEPT", "OVERRIDE"] = Field(
+        ...,
+        description="'ACCEPT' or 'OVERRIDE'"
+    )
     override_action: str | None = None
     override_reason: str | None = None
     override_note: str | None = None

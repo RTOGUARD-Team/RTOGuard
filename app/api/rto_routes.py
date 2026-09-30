@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from fastapi import APIRouter, HTTPException
 
 from app.rto_schemas import (
@@ -30,6 +32,7 @@ from app.services.simulation_engine import (
 
 from app.models import create_prediction_doc
 import logging as _logging
+from app.db import strip_forbidden_fields
 _db_log = _logging.getLogger("rtoguard.db")
 
 
@@ -47,11 +50,11 @@ def _save_to_db(
                       -- IF RETURNING: increments past_orders_count & orders_last_90d
     """
     try:
-        from app.db import predictions_collection, orders_collection, customers_collection
+        from app.db import predictions_collection, orders_collection, customers_collection, strip_forbidden_fields
         from datetime import datetime, timezone
 
         # 1. Save prediction result
-        predictions_collection.insert_one(prediction_doc)
+        predictions_collection.insert_one(strip_forbidden_fields(prediction_doc))
         _db_log.info("Prediction saved for order %s", prediction_doc.get("order_id"))
 
         # 2. Save the raw order
@@ -60,7 +63,7 @@ def _save_to_db(
         order_doc["status"] = "PENDING_DISPATCH"
         orders_collection.update_one(
             {"order_id": order_doc.get("order_id")},
-            {"$set": order_doc},
+            {"$set": strip_forbidden_fields(order_doc)},
             upsert=True,
         )
         _db_log.info("Order saved: %s", order_doc.get("order_id"))
@@ -88,7 +91,7 @@ def _save_to_db(
             }
             customers_collection.update_one(
                 {"customer_id": customer_id},
-                {"$set": new_customer_doc},
+                {"$set": strip_forbidden_fields(new_customer_doc)},
                 upsert=True,
             )
             _db_log.info("New customer %s registered in DB", customer_id)
@@ -111,7 +114,7 @@ def _save_to_db(
             if is_cod:
                 update_ops["$inc"]["prev_cod_orders"] = 1
 
-            customers_collection.update_one(cand_query, update_ops)
+            customers_collection.update_one(cand_query, strip_forbidden_fields(update_ops))
             _db_log.info("Incremented order history for returning customer %s", customer_id)
 
     except Exception as e:
@@ -370,22 +373,47 @@ def simulate(
             ]
 
         # ---------------------------------------------
-        # Otherwise generate synthetic orders
+        # Otherwise sample real historical orders with ground truth
         # ---------------------------------------------
 
         else:
-
-            orders = (
-                simulation_engine
-                .generate_synthetic_orders(
-
-                    number_of_orders=
-                        request.order_count,
-
-                    seed=
-                        request.seed
+            csv_path = Path(__file__).resolve().parent.parent / "data" / "orders.csv"
+            if csv_path.exists():
+                import pandas as pd
+                df = pd.read_csv(csv_path)
+                n = min(request.order_count, len(df)) if request.order_count <= len(df) else request.order_count
+                sample_df = df.sample(n=n, random_state=request.seed, replace=(request.order_count > len(df)))
+                orders = []
+                for _, row in sample_df.iterrows():
+                    o_dict = {
+                        "order_id": str(row["order_id"]),
+                        "customer_id": str(row["customer_id"]),
+                        "order_value": float(row["value"]),
+                        "payment_mode": str(row["payment_mode"]).upper(),
+                        "category": str(row.get("category", "general")),
+                        "is_festive_window": bool(request.festive) if getattr(request, "festive", False) else bool(row.get("is_festive", 0)),
+                        "checkout_hour": int(row.get("hour_of_day", 14)),
+                        "address_quality_score": float(row.get("address_completeness", 0.8)),
+                    }
+                    scored = ml_score_order(o_dict)
+                    orders.append({
+                        "order_id": o_dict["order_id"],
+                        "order_value": o_dict["order_value"],
+                        "payment_mode": o_dict["payment_mode"],
+                        "risk_score": scored["risk_score"],
+                        "top_factors": scored.get("top_factors", []),
+                        "outcome": str(row.get("outcome", "DELIVERED")).upper(),
+                    })
+            else:
+                orders = (
+                    simulation_engine
+                    .generate_synthetic_orders(
+                        number_of_orders=
+                            request.order_count,
+                        seed=
+                            request.seed
+                    )
                 )
-            )
 
         # ---------------------------------------------
         # RUN SIMULATION
@@ -483,7 +511,10 @@ def simulate_with_scoring(
                 "top_factors":
                     ml_result.get(
                         "top_factors", []
-                    )
+                    ),
+
+                "outcome":
+                    order_dict.get("outcome") or order_dict.get("actual_outcome", "DELIVERED")
             })
 
         # ---------------------------------------------
@@ -654,13 +685,13 @@ def record_order_outcome(request: OrderOutcomeRequest):
 
         orders_collection.update_one(
             {"order_id": request.order_id},
-            {
+            strip_forbidden_fields({
                 "$set": {
                     "delivery_status": norm_status,
                     "outcome_recorded_at": datetime.now(timezone.utc),
                     "notes": request.notes,
                 }
-            }
+            })
         )
 
         # 2. Update customer RTO profile
@@ -694,7 +725,7 @@ def record_order_outcome(request: OrderOutcomeRequest):
                         "past_rto_rate": new_rto_rate,
                     }
                 }
-                customers_collection.update_one(cand_query, update_dict)
+                customers_collection.update_one(cand_query, strip_forbidden_fields(update_dict))
                 customer_updated = True
                 _db_log.info(
                     "Customer %s updated: past_rto_orders=%d, new_rto_rate=%.4f",
@@ -739,6 +770,7 @@ def score_features_endpoint(req: ScoreFeaturesRequest):
             "payment_mode": req.payment_mode,
             "pincode": req.pincode,
             "is_festive_window": req.festive_window,
+            "customer_type": req.customer_type,
             "past_orders_count": req.past_orders,
             "past_rto_orders": req.past_rtos,
             "past_rto_rate": round(req.past_rtos / max(req.past_orders, 1), 4) if req.past_orders else 0.0,
@@ -968,7 +1000,7 @@ def save_operator_decision(order_id: str, req: OperatorDecisionRequest):
 
         predictions_collection.update_one(
             {"order_id": order_id},
-            {"$set": {"operator_decision": dec_record}}
+            strip_forbidden_fields({"$set": {"operator_decision": dec_record}})
         )
 
         return get_single_order(order_id)
@@ -1006,29 +1038,20 @@ def get_simulation_assumptions(order_count: int = 1000):
 
 @router.get("/evaluation")
 def get_model_evaluation():
-    """Returns model metrics for Evaluation tab."""
-    return {
-        "synthetic_outcomes": {
-            "n": 1000,
-            "high_risk_precision": 0.88,
-            "rto_recall": 0.82,
-            "false_positive_rate": 0.06,
-            "false_negative_rate": 0.18
-        },
-        "operator_outcomes": {
-            "n": 240,
-            "high_risk_precision": 0.91,
-            "rto_recall": 0.85,
-            "false_positive_rate": 0.04,
-            "false_negative_rate": 0.15
-        },
-        "operational": {
-            "decisions": 240,
-            "override_rate": 0.08,
-            "confirmation_queue_volume": 42,
-            "avg_decision_latency_seconds": 1.2
-        },
-        "note": "Calibrated against historical pilot delivery logs."
-    }
+    """Returns model metrics for Evaluation tab from real evaluation report."""
+    report_path = Path(__file__).resolve().parent.parent / "data" / "evaluation_report.json"
+    if not report_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Model evaluation report not found. Please run scripts/compute_evaluation_metrics.py to compute accuracy metrics."
+        )
+    try:
+        with open(report_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        _db_log.error("Failed to read evaluation report: %s", e)
+        raise HTTPException(status_code=500, detail=f"Failed to read evaluation report: {e}")
+
 
 

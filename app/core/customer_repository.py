@@ -34,7 +34,7 @@ def _init_mongo() -> None:
     try:
         from pymongo import MongoClient
         from app.config import settings
-        client = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=500)
+        client = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)
         client.admin.command("ping")                    # raises if unreachable
         from app.db import customers_collection
         _customers_col = customers_collection
