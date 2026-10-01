@@ -163,6 +163,7 @@ export default function ScoreOrder() {
     try {
       const payload: ScoreFeatures = {
         ...f,
+        customerId: f.customerId ? String(f.customerId).trim() : undefined,
         customerType: f.customerType,
         pastOrders: f.customerType === 'NEW' ? 0 : Number(f.pastOrders) || 0,
         pastRtos: f.customerType === 'NEW' ? 0 : Number(f.pastRtos) || 0,
@@ -205,6 +206,16 @@ export default function ScoreOrder() {
           ))}
         </div>
         <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <L t="Customer ID (Optional)" hint="e.g. 1, 101, CUS-1001 or new">
+            <input
+              className="field"
+              type="text"
+              placeholder="e.g. 1 or CUS-1001"
+              value={f.customerId ?? ''}
+              onChange={e => set('customerId', e.target.value.trim())}
+            />
+          </L>
+
           <L t="Customer type" errors={errors}>
             <select
               className="field"

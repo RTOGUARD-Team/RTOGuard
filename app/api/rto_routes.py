@@ -373,47 +373,67 @@ def simulate(
             ]
 
         # ---------------------------------------------
-        # Otherwise sample real historical orders with ground truth
+        # Otherwise sample real historical orders with ground truth from MongoDB
         # ---------------------------------------------
-
         else:
-            csv_path = Path(__file__).resolve().parent.parent / "data" / "orders.csv"
-            if csv_path.exists():
-                import pandas as pd
-                df = pd.read_csv(csv_path)
-                n = min(request.order_count, len(df)) if request.order_count <= len(df) else request.order_count
-                sample_df = df.sample(n=n, random_state=request.seed, replace=(request.order_count > len(df)))
+            from app.db import orders_collection, predictions_collection
+            total_db_orders = orders_collection.count_documents({})
+            if total_db_orders > 0:
+                n = min(request.order_count, total_db_orders)
+                # Sample real orders directly from MongoDB
+                sample_docs = list(orders_collection.aggregate([{"$sample": {"size": n}}]))
+                oids = [o["order_id"] for o in sample_docs]
+                preds_map = {p["order_id"]: p for p in predictions_collection.find({"order_id": {"$in": oids}})}
                 orders = []
-                for _, row in sample_df.iterrows():
-                    o_dict = {
-                        "order_id": str(row["order_id"]),
-                        "customer_id": str(row["customer_id"]),
-                        "order_value": float(row["value"]),
-                        "payment_mode": str(row["payment_mode"]).upper(),
-                        "category": str(row.get("category", "general")),
-                        "is_festive_window": bool(request.festive) if getattr(request, "festive", False) else bool(row.get("is_festive", 0)),
-                        "checkout_hour": int(row.get("hour_of_day", 14)),
-                        "address_quality_score": float(row.get("address_completeness", 0.8)),
-                    }
-                    scored = ml_score_order(o_dict)
+                for o in sample_docs:
+                    oid = o["order_id"]
+                    pred = preds_map.get(oid, {})
+                    risk_score = float(pred.get("risk_score", 0.25))
+                    top_factors = pred.get("top_factors", [])
                     orders.append({
-                        "order_id": o_dict["order_id"],
-                        "order_value": o_dict["order_value"],
-                        "payment_mode": o_dict["payment_mode"],
-                        "risk_score": scored["risk_score"],
-                        "top_factors": scored.get("top_factors", []),
-                        "outcome": str(row.get("outcome", "DELIVERED")).upper(),
+                        "order_id": oid,
+                        "order_value": float(o.get("order_value", 1000.0)),
+                        "payment_mode": str(o.get("payment_mode", "COD")).upper(),
+                        "risk_score": risk_score,
+                        "top_factors": top_factors,
+                        "outcome": str(o.get("delivery_status", o.get("outcome", "DELIVERED"))).upper(),
                     })
             else:
-                orders = (
-                    simulation_engine
-                    .generate_synthetic_orders(
-                        number_of_orders=
-                            request.order_count,
-                        seed=
-                            request.seed
+                csv_path = Path(__file__).resolve().parent.parent / "data" / "orders.csv"
+                if csv_path.exists():
+                    import pandas as pd
+                    df = pd.read_csv(csv_path)
+                    n = min(request.order_count, len(df)) if request.order_count <= len(df) else request.order_count
+                    sample_df = df.sample(n=n, random_state=request.seed, replace=(request.order_count > len(df)))
+                    orders = []
+                    for _, row in sample_df.iterrows():
+                        o_dict = {
+                            "order_id": str(row["order_id"]),
+                            "customer_id": str(row["customer_id"]),
+                            "order_value": float(row["value"]),
+                            "payment_mode": str(row["payment_mode"]).upper(),
+                            "category": str(row.get("category", "general")),
+                            "is_festive_window": bool(request.festive) if getattr(request, "festive", False) else bool(row.get("is_festive", 0)),
+                            "checkout_hour": int(row.get("hour_of_day", 14)),
+                            "address_quality_score": float(row.get("address_completeness", 0.8)),
+                        }
+                        scored = ml_score_order(o_dict)
+                        orders.append({
+                            "order_id": o_dict["order_id"],
+                            "order_value": o_dict["order_value"],
+                            "payment_mode": o_dict["payment_mode"],
+                            "risk_score": scored["risk_score"],
+                            "top_factors": scored.get("top_factors", []),
+                            "outcome": str(row.get("outcome", "DELIVERED")).upper(),
+                        })
+                else:
+                    orders = (
+                        simulation_engine
+                        .generate_synthetic_orders(
+                            number_of_orders=request.order_count,
+                            seed=request.seed
+                        )
                     )
-                )
 
         # ---------------------------------------------
         # RUN SIMULATION
@@ -616,28 +636,29 @@ def get_dashboard_summary():
                 "expected_loss_prevented": 0.0,
             }
 
-        preds = list(predictions_collection.find())
-        high_risk_count = 0
-        total_value = 0.0
-        total_loss_prevented = 0.0
+        high_risk_count = predictions_collection.count_documents({"risk_score": {"$gt": 0.65}})
 
-        for p in preds:
-            score = float(p.get("risk_score", 0.0))
-            if score > 0.65:
-                high_risk_count += 1
+        agg = list(predictions_collection.aggregate([
+            {
+                "$group": {
+                    "_id": None,
+                    "total_value": {"$sum": "$order_value"},
+                    "total_loss_prevented": {
+                        "$sum": {"$multiply": ["$order_value", "$risk_score", 0.35]}
+                    }
+                }
+            }
+        ]))
 
-            # Fetch matching order value
-            o = orders_collection.find_one({"order_id": p.get("order_id")}) or {}
-            val = float(o.get("order_value", 1500.0))
-            total_value += val
-            total_loss_prevented += round(val * score * 0.35, 2)
+        total_val = float(agg[0]["total_value"]) if agg and agg[0].get("total_value") else 0.0
+        total_loss = float(agg[0]["total_loss_prevented"]) if agg and agg[0].get("total_loss_prevented") else 0.0
 
         return {
             "total_orders": total_orders,
             "high_risk_orders": high_risk_count,
             "rto_risk_percentage": f"{(high_risk_count / total_orders * 100):.1f}",
-            "total_order_value": round(total_value, 2),
-            "expected_loss_prevented": round(total_loss_prevented, 2),
+            "total_order_value": round(total_val, 2),
+            "expected_loss_prevented": round(total_loss, 2),
         }
 
     except Exception as e:
@@ -763,19 +784,47 @@ def score_features_endpoint(req: ScoreFeaturesRequest):
         from datetime import datetime, timezone
         order_id = f"ORD-{int(datetime.now().timestamp() * 1000) % 1000000:06d}"
         
+        # Check if customer exists in MongoDB
+        cid = str(req.customer_id).strip() if req.customer_id else None
+        cust_profile = get_customer_profile(cid) if cid else {}
+        is_known = cust_profile.get("past_orders_count", 0) > 0
+
+        # If known in DB, use their actual DB history
+        if is_known:
+            customer_status = "returning"
+            cust_type = "RETURNING"
+            past_orders = cust_profile.get("past_orders_count", req.past_orders or 1)
+            past_rtos = cust_profile.get("past_rto_orders", req.past_rtos)
+            past_rate = cust_profile.get("past_rto_rate", round(past_rtos / max(past_orders, 1), 4))
+        else:
+            cust_type = req.customer_type
+            customer_status = "new" if cust_type == "NEW" else "returning"
+            past_orders = req.past_orders
+            past_rtos = req.past_rtos
+            past_rate = round(req.past_rtos / max(req.past_orders, 1), 4) if req.past_orders else 0.0
+
+        effective_cid = cid or f"CUS-{order_id.replace('ORD-', '')}"
+
         # Build order dict compatible with ML models
         order_dict = {
             "order_id": order_id,
+            "customer_id": effective_cid,
             "order_value": req.order_value,
             "payment_mode": req.payment_mode,
             "pincode": req.pincode,
             "is_festive_window": req.festive_window,
-            "customer_type": req.customer_type,
-            "past_orders_count": req.past_orders,
-            "past_rto_orders": req.past_rtos,
-            "past_rto_rate": round(req.past_rtos / max(req.past_orders, 1), 4) if req.past_orders else 0.0,
+            "customer_type": cust_type,
+            "past_orders_count": past_orders,
+            "past_rto_orders": past_rtos,
+            "past_rto_rate": past_rate,
             "category": "Apparel",
         }
+        if is_known:
+            for k in ("address_stability_score", "distinct_addresses_used", "tenure_months",
+                      "orders_per_month", "orders_last_90d", "prev_cod_orders",
+                      "prev_cod_success_rate", "cod_share_history", "avg_order_value"):
+                if k in cust_profile:
+                    order_dict[k] = cust_profile[k]
 
         # 1. Run ML Risk Engine
         ml_result = ml_score_order(order_dict)
@@ -805,22 +854,32 @@ def score_features_endpoint(req: ScoreFeaturesRequest):
             action=rec["recommended_action"],
             reason="; ".join(top_factors[:3]),
         )
-        prediction_doc["customer_type"] = req.customer_type
+        prediction_doc["customer_id"] = effective_cid
+        prediction_doc["customer_status"] = customer_status
+        prediction_doc["customer_type"] = cust_type
         prediction_doc["top_factors"] = top_factors
         prediction_doc["economics"] = econ
-        prediction_doc["features"] = req.model_dump()
+        prediction_doc["features"] = {
+            **req.model_dump(),
+            "customer_id": effective_cid,
+            "customer_type": cust_type,
+            "past_orders": past_orders,
+            "past_rtos": past_rtos,
+        }
         prediction_doc["payment_mode"] = req.payment_mode
         prediction_doc["order_value"] = req.order_value
 
         _save_to_db(
             order_dict=order_dict,
             prediction_doc=prediction_doc,
-            customer_status="new" if req.customer_type == "NEW" else "returning",
-            customer_id=order_id,
+            customer_status=customer_status,
+            customer_id=effective_cid,
         )
 
         return {
             "order_id": order_id,
+            "customer_id": effective_cid,
+            "customer_status": customer_status,
             "order_value": req.order_value,
             "payment_mode": req.payment_mode,
             "risk_score": risk_score,
@@ -830,7 +889,13 @@ def score_features_endpoint(req: ScoreFeaturesRequest):
             "reason": rec["reason"],
             "top_factors": top_factors,
             **econ,
-            "features": req.model_dump(),
+            "features": {
+                **req.model_dump(),
+                "customer_id": effective_cid,
+                "customer_type": cust_type,
+                "past_orders": past_orders,
+                "past_rtos": past_rtos,
+            },
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
 
@@ -840,7 +905,7 @@ def score_features_endpoint(req: ScoreFeaturesRequest):
 
 
 @router.get("/orders")
-def get_orders_for_frontend():
+def get_orders_for_frontend(limit: int = 1000):
     """
     Called by Rtoguard_FrontendM (Orders.tsx, Dashboard.tsx).
     Returns list of all evaluated orders from MongoDB matching RawScored interface.
@@ -848,12 +913,18 @@ def get_orders_for_frontend():
     try:
         from app.db import predictions_collection, orders_collection
 
-        preds = list(predictions_collection.find().sort("_id", -1).limit(100))
-        results = []
+        preds = list(predictions_collection.find().sort("_id", -1).limit(limit))
+        if not preds:
+            return []
 
+        # Batch-load matching orders in a single query for maximum performance
+        oids = [p.get("order_id") for p in preds if p.get("order_id")]
+        orders_map = {o["order_id"]: o for o in orders_collection.find({"order_id": {"$in": oids}})}
+
+        results = []
         for p in preds:
             oid = p.get("order_id", "")
-            o = orders_collection.find_one({"order_id": oid}) or {}
+            o = orders_map.get(oid, {})
             
             score = float(p.get("risk_score", 0.0))
             if score > 0.65:
@@ -882,6 +953,12 @@ def get_orders_for_frontend():
                 suggested_deposit=0.0
             )
 
+            # Build customer label and location from stored fields
+            cid = p.get("customer_id") or o.get("customer_id")
+            cust_label = f"Customer {cid}" if cid else "Customer"
+            pincode = str(o.get("pincode") or (p.get("features") or {}).get("pincode") or "110001")
+            loc = f"Pincode {pincode}"
+
             results.append({
                 "order_id": oid,
                 "order_value": val,
@@ -892,11 +969,14 @@ def get_orders_for_frontend():
                 "suggested_deposit": float(p.get("suggested_deposit", 0.0)),
                 "reason": reasons_raw or "Risk evaluated",
                 "top_factors": factors,
+                "customer": cust_label,
+                "location": loc,
                 "features": p.get("features", {
+                    "customer_id": cid,
                     "customer_type": "NEW" if p.get("customer_status") == "new" else "RETURNING",
                     "past_orders": 1,
                     "past_rtos": 0,
-                    "pincode": str(o.get("pincode", "110001")),
+                    "pincode": pincode,
                     "festive_window": bool(o.get("is_festive_window", False))
                 }),
                 "created_at": p.get("scored_at").isoformat() if hasattr(p.get("scored_at"), "isoformat") else str(p.get("scored_at") or ""),
@@ -933,7 +1013,7 @@ def get_single_order(order_id: str):
         if cid is not None:
             from app.db import customers_collection
             cust = customers_collection.find_one({"$or": [{"customer_id": cid}, {"customer_id": str(cid)}]})
-        cust_name = cust.get("name") if cust else f"Customer {cid}" if cid else "Customer"
+        cust_name = f"Customer {cid}" if cid else "Customer"
         loc = f"Pincode {o.get('pincode', '110001')}"
 
         reasons_raw = p.get("reason", "")

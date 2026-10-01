@@ -3,12 +3,17 @@ from pydantic import BaseModel, field_validator
 
 
 class OrderRequest(BaseModel):
-    customer_id: str      # ← SHA-256 hash, 64 hex characters
+    customer_id: str      # ← SHA-256 hash or numeric ID
     order_value: float
     payment_mode: str
     pincode: str
     category: str
     is_festive_window: bool
+
+    @field_validator("customer_id", mode="before")
+    @classmethod
+    def coerce_customer_id(cls, v) -> str:
+        return str(v).strip()
 
     @field_validator("pincode")
     @classmethod
