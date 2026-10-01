@@ -9,8 +9,8 @@ export interface Order{id:string;customer:string;value:number;location:string;pa
 export interface RiskFactor{key:string;name:string;contribution?:number}
 export interface RiskAssessment{orderId:string;riskScore:number;riskLevel:RiskLevel;factors:RiskFactor[];modelNote?:string}
 export interface Recommendation{orderId:string;riskScore:number;riskLevel:RiskLevel;action:Action;rationale:string;suggestedDeposit:number;topFactors:string[];probBefore:number;probAfter:number;lossBefore:number;lossAfter:number;rtoLossAvoided:number;interventionCost:number;conversionLoss:number;netImpact:number}
-export interface ScoreFeatures{customerType:'NEW'|'RETURNING';pastOrders:number;pastRtos:number;orderValue:number;paymentMode:'COD'|'PREPAID';pincode:string;festiveWindow:boolean}
-export interface Scored{order:Order;recommendation:Recommendation;modelNote:string}
+export interface ScoreFeatures{customerId?:string;customerType:'NEW'|'RETURNING';pastOrders:number;pastRtos:number;orderValue:number;paymentMode:'COD'|'PREPAID';pincode:string;festiveWindow:boolean}
+export interface Scored{order:Order;recommendation:Recommendation;modelNote:string;state?:OperatorState}
 export interface DecisionEvent{orderId:string;originalRiskScore:number;originalAction:Action;operatorAction:'ACCEPT'|'OVERRIDE';overrideAction?:Action;overrideReason?:OverrideReason;overrideNote?:string;at:string}
 export interface OutcomeRecord{orderId:string;actualOutcome:'DELIVERED'|'RTO'|'PENDING';outcomeDate?:string}
 export interface OperatorState{decision?:DecisionEvent;outcome?:OutcomeRecord}

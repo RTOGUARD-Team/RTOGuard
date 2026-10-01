@@ -11,8 +11,8 @@ import {DEMO,SCENARIOS} from '../data/demo'
 import {humanize} from '../lib/format'
 const BASE=(import.meta.env?.VITE_API_BASE_URL as string|undefined)??''
 let demo=false
-export const setDemoMode=(v:boolean)=>{demo=v}
-export const persistenceNote=()=>demo?'Demo Mode: saved in this browser only.':'Saved to the RTOGuard backend database.'
+export const setDemoMode=(_v:boolean)=>{demo=false}
+export const persistenceNote=()=>'Saved to the RTOGuard backend database.'
 
 const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms))
 
@@ -48,7 +48,7 @@ const toOrder=(r:RawScored,m?:{customer:string;location:string;date:string}):Ord
 
 const toDecision=(id:string,d:RawDecisionRecord):DecisionEvent=>({orderId:id,originalRiskScore:d.original_risk_score,originalAction:d.original_recommended_action,operatorAction:d.operator_action,overrideAction:d.override_action??undefined,overrideReason:(d.override_reason??undefined) as DecisionEvent['overrideReason'],overrideNote:d.override_note??undefined,at:d.decided_at})
 const toState=(r:RawScored):OperatorState=>({decision:r.decision?toDecision(r.order_id,r.decision):undefined,outcome:r.outcome&&r.outcome.actual_outcome!=='PENDING'?{orderId:r.order_id,actualOutcome:r.outcome.actual_outcome,outcomeDate:r.outcome.outcome_date??undefined}:undefined})
-const toScored=(r:RawScored,m?:Parameters<typeof toOrder>[1]):Scored=>({order:toOrder(r,m),recommendation:toRec(r),modelNote:r.model_note??'Heuristic risk score — not externally calibrated'})
+const toScored=(r:RawScored,m?:Parameters<typeof toOrder>[1]):Scored=>({order:toOrder(r,m),recommendation:toRec(r),modelNote:r.model_note??'Heuristic risk score — not externally calibrated',state:toState(r)})
 const toSim=(r:RawSim):SimulationResult=>({orderCount:r.order_count,festive:!!r.festive,baseline:{rate:r.baseline.expected_rto_rate,rtoOrders:r.baseline.expected_rto_orders,loss:r.baseline.expected_rto_loss},rtoguard:{rate:r.rtoguard.expected_rto_rate,rtoOrders:r.rtoguard.expected_rto_orders,loss:r.rtoguard.expected_rto_loss,actionCounts:r.rtoguard.action_counts},impact:{rtoLossAvoided:r.impact.rto_loss_avoided,interventionCost:r.impact.intervention_cost,conversionLoss:r.impact.conversion_loss_impact,netImpact:r.impact.net_business_impact,rtoRateChangePoints:r.impact.rto_rate_change_points,savedPer1000:r.impact.rupees_saved_per_1000_orders},orders:r.orders.map(o=>toOrder(o as RawScored))})
 const toMetrics=(m:RawMetrics):Evaluation['synthetic']=>({n:m.n,precision:m.high_risk_precision,recall:m.rto_recall,fpr:m.false_positive_rate,fnr:m.false_negative_rate})
 
@@ -72,7 +72,7 @@ export const getRiskAssessment=async(id:string):Promise<RiskAssessment>=>{const 
 /** Live: POST /rto/score-features (backend computes score, factors, action, economics and stores the order). Demo: replays the saved scenario with identical features. */
 export const scoreOrder=async(i:ScoreFeatures):Promise<Scored>=>{
  if(demo){await wait(300);const s=SCENARIOS.find(x=>JSON.stringify(x.features)===JSON.stringify(i));if(!s)throw new ApiError('unsupported','Demo Mode only scores the five saved scenarios (use the presets). Turn Demo Mode off to score custom orders on the backend.');return getScored(s.orderId)}
- return toScored(await http<RawScored>('/rto/score-features',{customer_type:i.customerType,past_orders:i.pastOrders,past_rtos:i.pastRtos,order_value:i.orderValue,payment_mode:i.paymentMode,pincode:i.pincode,festive_window:i.festiveWindow}))}
+ return toScored(await http<RawScored>('/rto/score-features',{customer_id:i.customerId,customer_type:i.customerType,past_orders:i.pastOrders,past_rtos:i.pastRtos,order_value:i.orderValue,payment_mode:i.paymentMode,pincode:i.pincode,festive_window:i.festiveWindow}))}
 
 /* ---------- operator decision + outcome ---------- */
 export const getOperatorStates=async():Promise<Record<string,OperatorState>>=>demo?load():Object.fromEntries((await http<RawScored[]>('/rto/orders')).map(r=>[r.order_id,toState(r)]))

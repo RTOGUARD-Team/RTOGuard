@@ -120,11 +120,9 @@ def seed_database():
 
     print(f"[OK] Upserted {len(df_customers)} customer profiles into 'customers' collection.")
 
-    # Seed a diverse subset of real orders from orders.csv into orders and predictions
-    # Pick 25 varied orders so the dashboard & risk intelligence are populated
-    sample_orders = df_orders.sample(n=min(25, len(df_orders)), random_state=42)
-    print("Scoring and seeding sample orders into 'orders' & 'predictions'...")
-    for _, o in sample_orders.iterrows():
+    # Seed ALL 1,000 real orders from orders.csv into orders and predictions
+    print(f"Scoring and seeding all {len(df_orders)} orders into 'orders' & 'predictions'...")
+    for idx, (_, o) in enumerate(df_orders.iterrows()):
         raw_req = RawOrder(
             order_id=str(o["order_id"]),
             customer_id=str(o["customer_id"]).strip().lower(),
@@ -135,8 +133,10 @@ def seed_database():
             is_festive_window=bool(o.get("is_festive", 0))
         )
         score_order(raw_req)
+        if (idx + 1) % 200 == 0:
+            print(f"Processed {idx + 1}/{len(df_orders)} orders...")
 
-    print(f"[OK] Seeded {len(sample_orders)} evaluated orders into 'orders' and 'predictions'.")
+    print(f"[OK] Seeded all {len(df_orders)} evaluated orders into 'orders' and 'predictions'.")
 
     # VERIFICATION AUDIT
     all_custs = list(customers_collection.find())

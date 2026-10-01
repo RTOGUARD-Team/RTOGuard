@@ -168,6 +168,7 @@ class OrderOutcomeRequest(BaseModel):
 # =====================================================
 
 class ScoreFeaturesRequest(BaseModel):
+    customer_id: str | None = None
     customer_type: str = "NEW"
     past_orders: int = 0
     past_rtos: int = 0
